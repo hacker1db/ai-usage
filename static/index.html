@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ai-usage · Token usage</title>
+  <link rel="stylesheet" href="/app.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Sections">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">◆</span> ai-usage</div>
+      <nav>
+        <a href="#overview" class="nav-item active">Overview</a>
+        <a href="#breakdown" class="nav-item">Breakdown</a>
+        <a href="#profiles" class="nav-item">Profiles</a>
+        <a href="#models" class="nav-item">Models</a>
+        <a href="#sources" class="nav-item">Sources</a>
+      </nav>
+      <div class="sidebar-foot" id="foot"></div>
+    </aside>
+
+    <main>
+      <header class="page-head">
+        <div>
+          <h1>Token usage</h1>
+          <p class="sub" id="subtitle">Loading…</p>
+        </div>
+        <div class="head-actions">
+          <span class="live" id="live"><span class="dot" aria-hidden="true"></span><span id="live-text">connecting</span></span>
+          <button type="button" class="btn" id="refresh">↻ Refresh now</button>
+        </div>
+      </header>
+
+      <div class="tabs" role="tablist" id="tabs"></div>
+
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Metric" id="metric"></div>
+        <span class="ctl-label">Burn rate</span>
+        <div class="seg" role="group" aria-label="Burn rate window" id="burn"></div>
+        <span class="ctl-label">Range</span>
+        <div class="seg" role="group" aria-label="Range" id="range"></div>
+      </div>
+
+      <div id="notice" class="notice" hidden></div>
+
+      <section class="card" id="overview" aria-labelledby="hero-title">
+        <div class="hero">
+          <div class="hero-main">
+            <div class="hero-title" id="hero-title"></div>
+            <div class="hero-number"><span id="hero-value">—</span><span class="hero-unit" id="hero-unit"></span></div>
+          </div>
+          <dl class="hero-stats" id="hero-stats"></dl>
+        </div>
+        <div class="chart-wrap">
+          <svg id="cum-chart" class="chart" role="img" aria-labelledby="cum-desc"></svg>
+          <p class="chart-desc" id="cum-desc"></p>
+        </div>
+        <div class="chart-key" id="cum-key"></div>
+      </section>
+
+      <section class="card" id="breakdown" aria-labelledby="bars-title">
+        <div class="card-head">
+          <h2 id="bars-title">Usage by profile</h2>
+          <span class="muted" id="bars-sub"></span>
+        </div>
+        <div class="legend" id="bars-legend"></div>
+        <div class="chart-wrap">
+          <svg id="bar-chart" class="chart" role="img" aria-labelledby="bars-title"></svg>
+        </div>
+        <details class="table-view">
+          <summary>Show as table</summary>
+          <div class="table-scroll"><table id="bars-table"></table></div>
+        </details>
+      </section>
+
+      <section id="profiles" aria-labelledby="profiles-title">
+        <h2 class="section-title" id="profiles-title">Profiles</h2>
+        <div class="grid" id="groups"></div>
+      </section>
+
+      <section class="card" id="models" aria-labelledby="models-title">
+        <div class="card-head"><h2 id="models-title">Models</h2><span class="muted" id="models-sub"></span></div>
+        <div class="table-scroll"><table id="models-table"></table></div>
+      </section>
+
+      <section class="card" id="sources" aria-labelledby="sources-title">
+        <div class="card-head"><h2 id="sources-title">Sources</h2><span class="muted" id="sources-sub"></span></div>
+        <div id="sources-body"></div>
+      </section>
+    </main>
+  </div>
+  <div class="tip" id="tip" role="tooltip" hidden></div>
+</body>
+</html>

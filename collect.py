@@ -63,17 +63,25 @@ def iter_jsonl(path):
 
 
 class Usage:
-    """Aggregates usage rows keyed by (tool, profile, model, local day)."""
+    """Aggregates usage rows keyed by (tool, profile, model, local day or hour).
 
-    def __init__(self, cutoff):
+    bucket="day" keys by local date (YYYY-MM-DD); bucket="hour" keys by local hour
+    (YYYY-MM-DDTHH:00), which the dashboard uses for burn rates.
+    """
+
+    def __init__(self, cutoff, bucket="day"):
+        if bucket not in ("day", "hour"):
+            raise ValueError(f"bucket must be day or hour, not {bucket!r}")
         self.cutoff = cutoff
+        self.bucket = bucket
         self.rows = defaultdict(lambda: dict.fromkeys(METRICS, 0) | {"sessions": set(), "copilot_aiu": 0.0})
 
     def add(self, tool, profile, model, ts, session, **m):
         if ts is None or ts < self.cutoff:
             return False
-        day = ts.astimezone().date().isoformat()
-        row = self.rows[(tool, profile, model or "unknown", day)]
+        local = ts.astimezone()
+        when = local.strftime("%Y-%m-%dT%H:00") if self.bucket == "hour" else local.date().isoformat()
+        row = self.rows[(tool, profile, model or "unknown", when)]
         row["requests"] += 1
         for k in ("input", "cached", "cache_write", "output", "reasoning"):
             row[k] += int(m.get(k) or 0)

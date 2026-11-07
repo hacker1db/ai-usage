@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to dashboard.json (gitignored) and edit. Keys are tool:profile as shown in the dashboard: claude-code:personal, claude-code:work-subscription, claude-code:work-foundry, codex:personal-chatgpt, codex:work-foundry, copilot:github-copilot. metric is total (input incl. cached + output), uncached (input - cached + output), or output. period is day, week (reset_weekday 0=Mon..6=Sun), or month (reset_day 1-28).",
+  "budgets": {
+    "claude-code:work-foundry": { "tokens": 2000000000, "metric": "total", "period": "month", "reset_day": 1 },
+    "codex:work-foundry": { "tokens": 200000000, "metric": "total", "period": "month", "reset_day": 1 }
+  }
+}

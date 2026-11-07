@@ -5,3 +5,6 @@ data/
 *.jsonl
 __pycache__/
 .DS_Store
+
+# Local dashboard budgets (personal); dashboard.example.json is the committed template
+dashboard.json

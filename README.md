@@ -39,6 +39,40 @@ python3 -I collect.py --help
 Options: `--claude DIR=LABEL` (repeatable, replaces the default profile list),
 `--codex-home`, `--copilot-db`, `--proxy-log`, `--out`.
 
+## Live dashboard
+
+`dashboard.py` serves a live dashboard at <http://127.0.0.1:8790>. It reuses the
+collectors in `collect.py` with hourly buckets, re-collects every 30 seconds in a
+background thread, and the page polls for changes every 10 seconds.
+
+```zsh
+python3 -I dashboard.py                    # foreground; Ctrl-C to stop
+./install-dashboard.sh                     # background LaunchAgent dev.hacker1db.ai-usage-dashboard
+./install-dashboard.sh --check             # agent state + /healthz
+./install-dashboard.sh --uninstall
+```
+
+- **Tabs:** All, Claude, Codex, Copilot, and Foundry (both `work-foundry` profiles).
+  Bookmark a view with query parameters, for example `/?tab=foundry&range=30d`.
+- **Controls:** metric (total, uncached = input - cached + output, output, requests),
+  burn-rate window (1h/3h/6h), and range (24h hourly, 7d in 4-hour buckets, 30d daily).
+- **Overview:** range total, today, burn rate, month (or budget period) to date, and a
+  cumulative chart with the projection to the period end at the trailing 7-day average.
+- **Breakdown, profiles, models, sources:** stacked usage per profile (with a table view),
+  a card per profile with sparkline and share, a profile/model table, and collector status
+  with the foundry-entra-proxy cross-check.
+- **Budgets (optional):** copy `dashboard.example.json` to `dashboard.json` (gitignored) and
+  set token budgets per `tool:profile` with a `day`, `week`, or `month` period. Profile cards
+  then show percent used and whether the projection exceeds the budget, and a tab whose
+  profiles all have matching budgets shows the budget line on the overview chart.
+- **Security:** binds to `127.0.0.1` only, rejects requests whose `Host` header isn't the
+  loopback listener (DNS rebinding), requires a custom header for `POST /api/refresh` (no
+  cross-site triggering), and sends a strict CSP. The snapshot holds usage counters, model
+  names, and session counts, never prompt or response text.
+- Logs: `~/Library/Logs/ai-usage/dashboard.log`. The LaunchAgent runs `dashboard.py` from
+  this checkout, so rerun `install-dashboard.sh` after moving it (for example after merging
+  to `main`).
+
 ## Outputs
 
 `reports/<YYYY-MM-DD>/` (gitignored):
