@@ -1,0 +1,7 @@
+# Generated usage data and reports (contain paths, session ids, usage history) - never commit
+reports/
+data/
+*.csv
+*.jsonl
+__pycache__/
+.DS_Store
