@@ -12,11 +12,28 @@ Claude Code ─► CLIProxyAPI :8317 (Anthropic→OpenAI) ─┘
 Entra tokens come from `az account get-access-token`; there is no Azure SDK and no
 `DefaultAzureCredential` chain. The Azure CLI session is the single credential source.
 
-## Build
+## Install (macOS LaunchAgent)
+
+`install.sh` builds the binary into `~/.local/bin`, creates the client key if it is missing, and
+runs the proxy as the per-user LaunchAgent `dev.hacker1db.foundry-entra-proxy`:
 
 ```zsh
 cd foundry-entra-proxy
-go build -ldflags "-X main.version=$(git rev-parse --short HEAD)" -o ~/bin/foundry-entra-proxy .
+./install.sh                               # resource from ANTHROPIC_FOUNDRY_RESOURCE, or --resource <name>
+./install.sh --deployments gpt-6-luna,gpt-6.1-sol,gpt-6-astra   # default allowlist shown
+./install.sh --check                       # binary, key, agent, /healthz, /readyz
+./install.sh --uninstall                   # unload the agent (keeps binary, key, logs)
+```
+
+The agent sets `FEP_UPSTREAM_BASE=https://<resource>.services.ai.azure.com`, `FEP_AZ_PATH`, and a
+minimal `PATH`, restarts on crash (`KeepAlive`), and logs to
+`~/Library/Logs/foundry-entra-proxy/proxy.log`. Rerun `install.sh` after pulling changes. It needs a
+working `az login`; `/readyz` reports `az_login_required` until then.
+
+### Build only
+
+```zsh
+go build -ldflags "-X main.version=$(git rev-parse --short HEAD)" -o ~/.local/bin/foundry-entra-proxy .
 ```
 
 ## Configuration
@@ -46,21 +63,29 @@ mkdir -p ~/.config/foundry-entra-proxy && chmod 700 ~/.config/foundry-entra-prox
 
 ## Codex CLI
 
-```toml
-[model_providers.foundry]
-name = "Azure AI Foundry via foundry-entra-proxy"
-base_url = "http://127.0.0.1:8787/openai/v1"
-env_key = "FOUNDRY_PROXY_KEY"
-wire_api = "responses"
+Codex 0.166+ profiles are overlay files: `codex -p foundry` layers `$CODEX_HOME/foundry.config.toml`
+on top of `~/.codex/config.toml`. Plain `codex` never reads the overlay, so a ChatGPT login in the
+base config keeps working unchanged. Don't use the legacy `[profiles.foundry]` table or
+`profile = "foundry"` in `config.toml`: Codex 0.166 refuses to start with `-p foundry` while either
+is present.
 
-[profiles.foundry]
+```toml
+# ~/.codex/foundry.config.toml
+model          = "gpt-6.1-sol"   # a deployment on FEP_ALLOWED_DEPLOYMENTS
 model_provider = "foundry"
-model = "<deployment name>"
+
+[model_providers.foundry]
+name     = "Azure AI Foundry via foundry-entra-proxy"
+base_url = "http://127.0.0.1:8787/openai/v1"
+env_key  = "FOUNDRY_PROXY_KEY"
+wire_api = "responses"
 ```
 
 ```zsh
-FOUNDRY_PROXY_KEY="$(<~/.config/foundry-entra-proxy/client.key)" codex --profile foundry
+FOUNDRY_PROXY_KEY="$(<~/.config/foundry-entra-proxy/client.key)" codex -p foundry
 ```
+
+The dotfiles `codex-foundry` launcher does this for you.
 
 ## Behavior
 
@@ -83,7 +108,22 @@ FOUNDRY_PROXY_KEY="$(<~/.config/foundry-entra-proxy/client.key)" codex --profile
   `az` once, and retries; a second `401` is returned with `X-Proxy-Error: upstream_unauthorized`.
 - **Streaming:** SSE is flushed as it arrives. Request cancellation propagates upstream.
 - **Logs:** JSON on stderr with a correlation ID, method, path, model, status, Foundry request ID,
-  bytes, and duration. Headers, bodies, and key material are never logged.
+  bytes, duration, and `client` (the User-Agent product token, such as `codex_cli_rs`). Headers,
+  bodies, and key material are never logged.
+- **Token usage:** for 2xx responses the proxy reads `usage` as the body streams through (a JSON
+  body, the Responses `response.completed` event, or a Chat Completions usage chunk) and adds
+  `input_tokens`, `output_tokens`, `cached_tokens`, `reasoning_tokens`, and `total_tokens` to the
+  request log line. The body is passed through unchanged. The proxy drops the client's
+  `Accept-Encoding` so the upstream hop is decoded by the transport; the loopback hop is
+  uncompressed. Bodies or SSE lines over 16 MiB pass through without usage.
+
+  ```zsh
+  # Tokens per model today
+  jq -s --arg d "$(date +%F)" 'map(select(.msg=="request" and .input_tokens and (.time|startswith($d))))
+    | group_by(.model) | map({model: .[0].model, requests: length,
+      input: (map(.input_tokens)|add), output: (map(.output_tokens)|add)})' \
+    ~/Library/Logs/foundry-entra-proxy/proxy.log
+  ```
 - **Correlation:** every response carries `X-Correlation-ID`; Foundry receives it as
   `x-ms-client-request-id`.
 
