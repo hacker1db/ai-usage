@@ -62,6 +62,7 @@ type requestInfo struct {
 	upstreamRequestID string
 	retried           bool
 	idleTimedOut      atomic.Bool
+	usage             usage
 }
 
 type infoKey struct{}
@@ -101,7 +102,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if rec.status >= 500 || info.idleTimedOut.Load() {
 			level = slog.LevelWarn
 		}
-		p.log.Log(r.Context(), level, "request",
+		attrs := []any{
 			"id", info.id,
 			"method", r.Method,
 			"path", r.URL.Path,
@@ -113,7 +114,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"stream_idle_timeout", info.idleTimedOut.Load(),
 			"bytes", rec.bytes,
 			"duration_ms", time.Since(start).Milliseconds(),
-		)
+			"client", clientName(r.UserAgent()),
+		}
+		p.log.Log(r.Context(), level, "request", append(attrs, info.usage.logAttrs()...)...)
 	}()
 
 	if !isLoopback(r.RemoteAddr) {
@@ -201,6 +204,9 @@ func (p *Proxy) rewrite(pr *httputil.ProxyRequest) {
 		pr.Out.Header.Del(h)
 	}
 	pr.Out.Header.Del(headerCorrelate)
+	// Let the transport negotiate and decode compression so usage can be read from the body;
+	// the hop to the client is loopback, where compression buys nothing.
+	pr.Out.Header.Del("Accept-Encoding")
 	if info := infoFrom(pr.In.Context()); info != nil {
 		pr.Out.Header.Set("X-Ms-Client-Request-Id", info.id)
 	}
@@ -209,6 +215,7 @@ func (p *Proxy) rewrite(pr *httputil.ProxyRequest) {
 func (p *Proxy) modifyResponse(resp *http.Response) error {
 	if info := infoFrom(resp.Request.Context()); info != nil {
 		info.upstreamRequestID = firstNonEmpty(resp.Header.Get("Apim-Request-Id"), resp.Header.Get("X-Request-Id"))
+		resp.Body = newUsageBody(resp, &info.usage)
 	}
 	return nil
 }
@@ -469,6 +476,17 @@ func isTimeout(err error) bool {
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// clientName keeps the product token of a User-Agent (for example "codex_cli_rs") so usage can be
+// attributed per tool without logging the full header.
+func clientName(ua string) string {
+	name, _, _ := strings.Cut(strings.TrimSpace(ua), " ")
+	name, _, _ = strings.Cut(name, "/")
+	if len(name) > 64 {
+		name = name[:64]
+	}
+	return name
 }
 
 func firstNonEmpty(values ...string) string {

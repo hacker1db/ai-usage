@@ -76,6 +76,14 @@ type harness struct {
 	tokens   *fakeTokens
 	upstream *captured
 	logs     *strings.Builder
+	logMu    *sync.Mutex
+}
+
+// logText reads the log buffer under the logger's lock, for tests that poll while requests finish.
+func (h *harness) logText() string {
+	h.logMu.Lock()
+	defer h.logMu.Unlock()
+	return h.logs.String()
 }
 
 func newHarness(t *testing.T, upstream http.HandlerFunc, mutate func(*Options)) *harness {
@@ -89,7 +97,7 @@ func newHarness(t *testing.T, upstream http.HandlerFunc, mutate func(*Options)) 
 	u, _ := url.Parse(up.URL)
 
 	logs := &strings.Builder{}
-	var logMu sync.Mutex
+	logMu := &sync.Mutex{}
 	tokens := &fakeTokens{}
 	opts := Options{
 		Upstream:           u,
@@ -98,14 +106,14 @@ func newHarness(t *testing.T, upstream http.HandlerFunc, mutate func(*Options)) 
 		Tokens:             tokens,
 		StreamIdleTimeout:  2 * time.Second,
 		MaxRequestBytes:    1 << 20,
-		Logger:             slog.New(slog.NewJSONHandler(lockedWriter{&logMu, logs}, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Logger:             slog.New(slog.NewJSONHandler(lockedWriter{logMu, logs}, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	}
 	if mutate != nil {
 		mutate(&opts)
 	}
 	front := httptest.NewServer(New(opts))
 	t.Cleanup(front.Close)
-	return &harness{proxy: front, tokens: tokens, upstream: cap, logs: logs}
+	return &harness{proxy: front, tokens: tokens, upstream: cap, logs: logs, logMu: logMu}
 }
 
 type lockedWriter struct {
