@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"ai-usage/internal/proxylog"
 )
 
 // requestLog waits for the proxy's "request" log line (written after the response finishes) and decodes it.
@@ -132,5 +134,30 @@ func TestClientName(t *testing.T) {
 		if got := clientName(ua); got != want {
 			t.Errorf("clientName(%q) = %q, want %q", ua, got, want)
 		}
+	}
+}
+
+// The ai-usage collector decodes request lines into proxylog.Request; this pins that contract.
+func TestRequestLogMatchesCollectorContract(t *testing.T) {
+	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"usage":{"input_tokens":120,"input_tokens_details":{"cached_tokens":100},"output_tokens":30,"output_tokens_details":{"reasoning_tokens":12},"total_tokens":150}}`)
+	}, nil)
+	resp := h.do(t, http.MethodPost, "/openai/v1/responses", `{"model":"gpt-5.5"}`,
+		map[string]string{"Authorization": "Bearer " + testKey, "User-Agent": "codex_cli_rs/0.166.0"})
+	_, _ = io.ReadAll(resp.Body)
+	requestLog(t, h) // wait for the line
+
+	var got proxylog.Request
+	for _, line := range strings.Split(h.logText(), "\n") {
+		var r proxylog.Request
+		if json.Unmarshal([]byte(line), &r) == nil && r.Msg == proxylog.Message {
+			got = r
+		}
+	}
+	want := proxylog.Request{Time: got.Time, Msg: proxylog.Message, Model: "gpt-5.5", Client: "codex_cli_rs", Status: 200,
+		InputTokens: 120, OutputTokens: 30, CachedTokens: 100, ReasoningTokens: 12, TotalTokens: 150}
+	if got != want || got.Time == "" {
+		t.Fatalf("decoded request line = %+v, want %+v", got, want)
 	}
 }

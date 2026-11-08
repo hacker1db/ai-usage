@@ -6,6 +6,8 @@ import (
 	"io"
 	"mime"
 	"net/http"
+
+	"ai-usage/internal/proxylog"
 )
 
 // maxUsageScanBytes bounds what the usage scanner buffers: a whole JSON body, or one SSE line.
@@ -91,11 +93,11 @@ func (u *usage) logAttrs() []any {
 		return nil
 	}
 	return []any{
-		"input_tokens", u.input,
-		"output_tokens", u.output,
-		"cached_tokens", u.cached,
-		"reasoning_tokens", u.reasoning,
-		"total_tokens", u.total,
+		proxylog.KeyInputTokens, u.input,
+		proxylog.KeyOutputTokens, u.output,
+		proxylog.KeyCachedTokens, u.cached,
+		proxylog.KeyReasoningTokens, u.reasoning,
+		proxylog.KeyTotalTokens, u.total,
 	}
 }
 

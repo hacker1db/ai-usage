@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"ai-usage/internal/fep/token"
+	"ai-usage/internal/proxylog"
 )
 
 const (
@@ -106,7 +107,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"id", info.id,
 			"method", r.Method,
 			"path", r.URL.Path,
-			"model", info.model,
+			proxylog.KeyModel, info.model,
 			"status", rec.status,
 			"proxy_error", rec.Header().Get(headerProxyError),
 			"upstream_request_id", info.upstreamRequestID,
@@ -114,9 +115,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"stream_idle_timeout", info.idleTimedOut.Load(),
 			"bytes", rec.bytes,
 			"duration_ms", time.Since(start).Milliseconds(),
-			"client", clientName(r.UserAgent()),
+			proxylog.KeyClient, clientName(r.UserAgent()),
 		}
-		p.log.Log(r.Context(), level, "request", append(attrs, info.usage.logAttrs()...)...)
+		p.log.Log(r.Context(), level, proxylog.Message, append(attrs, info.usage.logAttrs()...)...)
 	}()
 
 	if !isLoopback(r.RemoteAddr) {
