@@ -21,7 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"foundry-entra-proxy/internal/token"
+	"ai-usage/internal/fep/token"
 )
 
 const (

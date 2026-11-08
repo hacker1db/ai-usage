@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"foundry-entra-proxy/internal/config"
-	"foundry-entra-proxy/internal/proxy"
-	"foundry-entra-proxy/internal/token"
+	"ai-usage/internal/fep/config"
+	"ai-usage/internal/fep/proxy"
+	"ai-usage/internal/fep/token"
 )
 
 var version = "dev"
