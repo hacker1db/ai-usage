@@ -725,7 +725,7 @@ function renderSessions(sessions) {
     const hit = cls?.lookup(x.id);
     const theme = hit && hit.theme !== "none" ? cls.themes.get(hit.theme)?.name || hit.theme : null;
     const src = TITLE_SRC[x.title_src];
-    return el("tr", {},
+    const tr = el("tr", { class: "clickable", tabindex: "0", "aria-expanded": "false" },
       el("td", { class: "left", text: whenFmt.format(new Date(x.last)) }),
       el("td", { class: "title" }, x.title || el("span", { class: "muted", text: "(untitled)" }),
         src ? el("span", { class: "src", text: src }) : null,
@@ -735,15 +735,106 @@ function renderSessions(sessions) {
       cls ? el("td", { class: "left wrap", text: theme || (hit ? "housekeeping" : "—") }) : null,
       el("td", { text: hours(x.active_min) }),
       el("td", { title: exact.format(sessionMetric(x)), text: fmt(sessionMetric(x)) }));
+    const cols = cls ? 7 : 6;
+    const open = () => toggleDetail(x, tr, (panel) => el("tr", { class: "detail-row" }, el("td", { colspan: cols }, panel)));
+    tr.addEventListener("click", open);
+    tr.addEventListener("keydown", (e) => { if (e.key === "Enter") open(); });
+    return tr;
   });
   $("sessions-table").replaceChildren(el("thead", {}, head),
     el("tbody", {}, body.length ? body : el("tr", {}, el("td", { colspan: 8, class: "empty", text: "No sessions match." }))));
+  shown.forEach((x, i) => { if (openRows.has(sessionKey(x))) { openRows.delete(sessionKey(x)); body[i].click(); } });
   $("sessions-sub").textContent = `${exact.format(list.length)} sessions in the last ${range().label}${list.length > SESSION_LIMIT ? `, showing ${SESSION_LIMIT}` : ""}. ` +
     "Titles come from each tool (Claude AI titles, Copilot summaries, Codex thread names), else the first prompt; secrets are redacted.";
 }
 
+// ---------- where the tokens went + session detail ----------
+
+const details = new Map();
+const openRows = new Set();
+const sessionKey = (x) => `${x.tool}|${x.profile}|${x.id}`;
+
+async function loadDetail(x) {
+  const key = sessionKey(x);
+  if (!details.has(key)) {
+    const res = await fetch(`/api/session?key=${encodeURIComponent(key)}`, { cache: "no-store" });
+    details.set(key, res.ok ? await res.json() : null);
+  }
+  return details.get(key);
+}
+
+function detailPanel(x, d) {
+  const g = groupOfSession(x);
+  const meta = el("div", { class: "meta" },
+    [`${g.label}`, x.path, x.branch && `⎇ ${x.branch}`, x.repo,
+      `${whenFmt.format(new Date(x.first))} → ${whenFmt.format(new Date(x.last))}`, `active ${hours(x.active_min)}`,
+      `${exact.format(x.requests)} requests`].filter(Boolean).join(" · "));
+  if (!d) return el("div", { class: "detail" }, meta, el("p", { class: "muted", text: "No detail recorded for this session." }));
+  const block = (title, body) => el("div", {}, el("h4", { text: title }), body);
+  const parts = [meta];
+  if (d.prompts?.length) parts.push(block("What you asked", el("ol", {}, d.prompts.map((p) => el("li", { text: p })))));
+  if (d.files?.length) {
+    parts.push(block(`Files changed (${d.files_total})`, el("ul", { class: "files" },
+      d.files.map(([f, n]) => el("li", { title: f }, x.path && f.startsWith(`${x.path}/`) ? f.slice(x.path.length + 1) : f,
+        n > 1 ? el("span", { text: ` ×${n}` }) : null)),
+      d.files_total > d.files.length ? el("li", { class: "muted", text: `+${d.files_total - d.files.length} more` }) : null)));
+  }
+  if (d.commands?.length) parts.push(block("Commands", el("ul", {}, d.commands.map((c) => el("li", { text: c })))));
+  if (d.refs?.length) parts.push(block("References", el("ul", {}, d.refs.map((r) => el("li", { text: r })))));
+  if (d.tools?.length) parts.push(block("Tools used", el("div", { class: "chips" }, d.tools.map(([t, n]) => el("span", { class: "chip", text: `${t} ${n}` })))));
+  if (d.models?.length > 1) parts.push(block("Models", el("div", { class: "chips" }, d.models.map(([m, n]) => el("span", { class: "chip", text: `${m} · ${n} req` })))));
+  return el("div", { class: "detail" }, parts);
+}
+
+async function toggleDetail(x, anchor, makeHost) {
+  const key = sessionKey(x);
+  const next = anchor.nextElementSibling;
+  if (next?.dataset.detailFor === key) {
+    next.remove(); openRows.delete(key); anchor.setAttribute("aria-expanded", "false");
+    return;
+  }
+  openRows.add(key);
+  anchor.setAttribute("aria-expanded", "true");
+  const host = makeHost(el("div", { class: "detail" }, el("span", { class: "muted", text: "Loading…" })));
+  host.dataset.detailFor = key;
+  anchor.after(host);
+  const d = await loadDetail(x);
+  host.replaceChildren(makeHost(detailPanel(x, d)).firstChild || detailPanel(x, d));
+}
+
+function renderTopSessions(sessions) {
+  const list = [...sessions].sort((a, b) => sessionMetric(b) - sessionMetric(a)).slice(0, 12);
+  const total = sessions.reduce((s, x) => s + sessionMetric(x), 0);
+  const topSum = list.reduce((s, x) => s + sessionMetric(x), 0);
+  const max = Math.max(...list.map(sessionMetric), 1);
+  $("top-sub").textContent = sessions.length
+    ? `top ${list.length} of ${exact.format(sessions.length)} sessions = ${total ? Math.round((topSum / total) * 100) : 0}% of ${metric().unit}, last ${range().label} · click a row to see what happened`
+    : "";
+  const rows = [];
+  list.forEach((x, i) => {
+    const g = groupOfSession(x);
+    const v = sessionMetric(x);
+    const row = el("div", { class: "top-row", role: "button", tabindex: "0", "aria-expanded": "false" },
+      el("div", { class: "rank", text: String(i + 1) }),
+      el("div", {}, el("div", { class: "t", text: x.title || "(untitled)" }),
+        el("div", { class: "sub" }, el("span", { class: "chip" }, swatch(g.color), g.label), el("span", { text: x.project || "—" }),
+          x.branch ? el("span", { text: `⎇ ${x.branch}` }) : null, el("span", { text: `${hours(x.active_min)} active` }),
+          el("span", { text: whenFmt.format(new Date(x.last)) }))),
+      el("div", { class: "bar", "aria-hidden": "true" }, el("span", { bg: g.color, "width%": `${(v / max) * 100}%` })),
+      el("div", { class: "val" }, el("b", { title: exact.format(v), text: fmt(v) }), el("span", { text: total ? `${((v / total) * 100).toFixed(1)}% of range` : "" })));
+    const open = () => toggleDetail(x, row, (panel) => { const w = el("div", {}); w.append(panel); return w; });
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    rows.push(row);
+  });
+  $("top-list").replaceChildren(...(rows.length ? rows : [el("div", { class: "empty", text: "No sessions in this tab and range." })]));
+  // Re-open panels that were open before a live refresh.
+  list.forEach((x, i) => { if (openRows.has(sessionKey(x))) { openRows.delete(sessionKey(x)); rows[i].click(); } });
+}
+
 function renderWork(now) {
   const sessions = sessionsInRange(now);
+  renderTopSessions(sessions);
   renderWorkstreams(sessions);
   renderProjects(sessions);
   renderSessions(sessions);
@@ -784,8 +875,14 @@ async function poll() {
     const res = await fetch("/api/usage", { headers: etag ? { "If-None-Match": etag } : {}, cache: "no-store" });
     lastOk = Date.now();
     if (res.status === 200) {
+      const body = await res.json();
+      if (!body.rows) {
+        $("notice").hidden = false;
+        $("notice").textContent = "Collecting usage for the first time… this page fills in automatically.";
+        return;
+      }
       etag = res.headers.get("ETag");
-      data = parse(await res.json());
+      data = parse(body);
       $("notice").hidden = true;
       render();
     }
@@ -818,7 +915,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) poll
 
 $("session-filter").addEventListener("input", (e) => { sessionFilter = e.target.value; if (data) renderSessions(sessionsInRange(new Date())); });
 
-const sections = ["overview", "breakdown", "profiles", "work", "models", "sources"];
+const sections = ["overview", "top-sessions", "breakdown", "profiles", "work", "models", "sources"];
 const navObserver = new IntersectionObserver((entries) => {
   for (const e of entries) {
     if (!e.isIntersecting) continue;

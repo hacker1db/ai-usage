@@ -18,6 +18,7 @@ import os
 import sys
 import threading
 import time
+from urllib.parse import parse_qs, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -146,6 +147,10 @@ class HistoryStore:
     def since(self, first_hour):
         return [r for r in self.rows.values() if r[0] >= first_hour]
 
+    def detail(self, key):
+        x = self.sessions.get(key)
+        return x.get("detail") if x else None
+
     def sessions_since(self, cutoff_iso):
         return sorted((x for x in self.sessions.values() if x["last"] >= cutoff_iso), key=lambda x: x["last"], reverse=True)
 
@@ -188,7 +193,7 @@ class Collector:
         self.history = HistoryStore(args.history)
         self.lock = threading.Lock()
         self.wake = threading.Event()
-        self.body, self.etag = b"{}", '"empty"'
+        self.body, self.etag = b'{"pending":true}', '"pending"'
         self.last_error = None
 
     def build(self):
@@ -207,11 +212,13 @@ class Collector:
         live = [[k[3], k[0], k[1], k[2], *(r[m] for m in c.METRICS), len(r["sessions"]), round(r["copilot_aiu"], 4)]
                 for k, r in usage.rows.items()]
         first_hour = cutoff.strftime("%Y-%m-%dT%H:00")
-        sessions_live = c.session_rows(usage)
+        sessions_live = c.session_rows(usage, detail=True)
         held = self.history.merge(live, sessions_live)
         rows = sorted(self.history.since(first_hour))
         kept = sum(1 for k in held if k[0] >= first_hour)
-        sessions = self.history.sessions_since(cutoff.isoformat(timespec="seconds"))
+        # Session details (prompts, files, commands) stay server-side; the page fetches one on demand.
+        sessions = [{k: v for k, v in x.items() if k != "detail"}
+                    for x in self.history.sessions_since(cutoff.isoformat(timespec="seconds"))]
         return {
             "meta": {
                 "generated": now.isoformat(timespec="seconds"),
@@ -257,7 +264,7 @@ class Collector:
               file=sys.stderr)
 
     def run(self):
-        # main() already ran the first refresh; wait, then collect on each tick or wake-up.
+        # main() sets wake, so the first pass collects immediately; then every tick or wake-up.
         while True:
             self.wake.wait(self.args.interval)
             self.wake.clear()
@@ -311,6 +318,14 @@ def make_handler(collector, allowed_hosts):
                     self.send(304, extra={"ETag": etag})
                 else:
                     self.send(200, body, extra={"ETag": etag})
+            elif path == "/api/session":
+                key = (parse_qs(urlsplit(self.path).query).get("key") or [""])[0]
+                with collector.lock:
+                    detail = collector.history.detail(key)
+                if detail is None:
+                    self.send(404, b'{"error":"unknown session"}')
+                else:
+                    self.send(200, json.dumps(detail, separators=(",", ":")).encode())
             elif path == "/report":
                 report = os.path.join(collector.args.work_report or "", REPORT_NAME)
                 try:
@@ -365,7 +380,7 @@ def main():
     args.days = min(max(args.days, 2), 400)
 
     collector = Collector(args)
-    collector.refresh()
+    collector.wake.set()  # first collection runs in the thread so the server answers right away
     threading.Thread(target=collector.run, daemon=True).start()
 
     names = {"127.0.0.1", "localhost"}

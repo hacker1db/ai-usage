@@ -191,3 +191,27 @@ code { background: var(--surface-2); border: 1px solid var(--border); border-rad
 pre.cmd { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
   color: var(--text-secondary); font-size: 12px; overflow-x: auto; margin: 8px 0 0; }
 #sessions-table td.wrap { white-space: normal; max-width: 170px; overflow-wrap: anywhere; line-height: 1.35; }
+
+/* Top sessions + session detail */
+.top-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(120px, 28%) 150px; gap: 14px; align-items: center;
+  padding: 10px 6px; border-bottom: 1px solid var(--border); cursor: pointer; border-radius: 6px; }
+.top-row:hover, .top-row[aria-expanded="true"] { background: var(--surface-2); }
+.top-row .rank { color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+.top-row .t { font-weight: 600; line-height: 1.35; }
+.top-row .sub { color: var(--text-muted); font-size: 12px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.top-row .bar { height: 8px; background: var(--surface-3); border-radius: 4px; overflow: hidden; }
+.top-row .bar span { display: block; height: 100%; border-radius: 4px; }
+.top-row .val { text-align: right; font-variant-numeric: tabular-nums; }
+.top-row .val b { display: block; font-size: 15px; }
+.top-row .val span { color: var(--text-muted); font-size: 12px; }
+.detail { padding: 12px 14px 16px 48px; border-bottom: 1px solid var(--border); background: var(--surface-1);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px 28px; }
+.detail h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.detail ol, .detail ul { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.detail li { margin-bottom: 3px; overflow-wrap: anywhere; }
+.detail .meta { grid-column: 1 / -1; color: var(--text-muted); font-size: 12px; }
+.detail .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.detail .files li span { color: var(--text-muted); }
+tr.clickable { cursor: pointer; }
+tr.detail-row > td { padding: 0; text-align: left; white-space: normal; }
+tr.detail-row:hover > td { background: transparent; }

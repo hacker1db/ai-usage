@@ -70,6 +70,11 @@ python3 -I dashboard.py                    # foreground; Ctrl-C to stop
   with the ai-work-report skill's secret patterns redacted. Projects resolve to the git root
   (bare-clone aware) or the repository name. Active time counts 5-minute slots with activity,
   so idle gaps don't count.
+- **Where the tokens went:** the top sessions in the tab and range by the selected metric, with
+  share of the range. Click a session (here or in the session list) to see what happened in it:
+  the prompts you gave, files changed, commands run (Claude Bash descriptions, Codex exec
+  commands), tools used, and Copilot refs. Details are redacted, kept in `data/hourly.json`, and
+  fetched one session at a time from `/api/session`, so the live snapshot stays small.
 - **ai-work-report overlay (optional):** run the `ai-work-report` skill with its workdir set to
   `data/work-report` (and `--out data/work-report/ai-work-report.html`). The dashboard then
   reads `classified.json` and `narrative.json` and adds a Workstreams card (themes, sessions,

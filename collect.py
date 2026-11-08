@@ -43,6 +43,9 @@ SECRET_PATTERNS = [
     re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
 ]
 INJECTED_PREFIXES = ("<", "# AGENTS.md", "# CLAUDE.md", "Caveat:")
+MAX_PROMPTS, MAX_COMMANDS, MAX_REFS = 8, 10, 10
+EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "create", "edit", "apply_patch", "str_replace_editor"}
+PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File: (.+)$", re.M)
 
 
 def redact(text):
@@ -152,7 +155,8 @@ class Usage:
         return self.sessions.setdefault((tool, profile, sid), {
             "requests": 0, "total": 0, "uncached": 0, "output": 0, "models": Counter(), "slots": set(),
             "first": None, "last": None, "title": None, "title_src": None, "prompt": None,
-            "cwd": None, "repo": None, "branch": None})
+            "cwd": None, "repo": None, "branch": None,
+            "prompts": [], "files": Counter(), "tools": Counter(), "commands": [], "refs": []})
 
     def note(self, tool, profile, sid, **meta):
         """Merge session metadata (title, cwd, repo, branch, prompt, slots); first non-empty value wins."""
@@ -160,6 +164,12 @@ class Usage:
             return
         s = self.session(tool, profile, sid)
         s["slots"] |= meta.pop("slots", set())
+        for k, cap in (("prompts", MAX_PROMPTS), ("commands", MAX_COMMANDS), ("refs", MAX_REFS)):
+            for v in meta.pop(k, None) or []:
+                if v and v not in s[k] and len(s[k]) < cap:
+                    s[k].append(v)
+        for k in ("files", "tools"):
+            s[k].update(meta.pop(k, None) or {})
         for k, v in meta.items():
             if v and not s.get(k):
                 s[k] = v
@@ -264,8 +274,25 @@ def parse_claude_file(path):
             m.setdefault("cwd", e.get("cwd"))
             if e.get("gitBranch") and e.get("gitBranch") != "HEAD":
                 m.setdefault("branch", e.get("gitBranch"))
-            if kind == "user" and not m.get("prompt") and not e.get("isMeta") and not e.get("isSidechain"):
-                m["prompt"] = clean_title(first_text((e.get("message") or {}).get("content")))
+            if kind == "user" and not e.get("isMeta") and not e.get("isSidechain"):
+                text = clean_title(first_text((e.get("message") or {}).get("content")), limit=240)
+                if text:
+                    m.setdefault("prompt", clean_title(text))
+                    if len(m.setdefault("prompts", [])) < MAX_PROMPTS:
+                        m["prompts"].append(text)
+            if kind == "assistant":
+                for b in (e.get("message") or {}).get("content") or []:
+                    if not isinstance(b, dict) or b.get("type") != "tool_use":
+                        continue
+                    name, inp = b.get("name") or "?", b.get("input") if isinstance(b.get("input"), dict) else {}
+                    m.setdefault("tools", Counter())[name] += 1
+                    path = inp.get("file_path") or inp.get("notebook_path")
+                    if name in EDIT_TOOLS and isinstance(path, str):
+                        m.setdefault("files", Counter())[tilde(path)] += 1
+                    if name == "Bash" and len(m.setdefault("commands", [])) < MAX_COMMANDS:
+                        cmd = clean_title(inp.get("description") or inp.get("command"), limit=140)
+                        if cmd:
+                            m["commands"].append(cmd)
         if kind != "assistant":
             continue
         msg = e.get("message") or {}
@@ -305,7 +332,9 @@ def collect_claude(usage, dirs, status, cache=None):
                 count += usage.add("claude-code", label, model, ts, session, **m)
             for sid, m in meta.items():
                 if ("claude-code", label, sid) in usage.sessions:
-                    usage.note("claude-code", label, sid, **{**m, "slots": set(m.get("slots", ()))})
+                    usage.note("claude-code", label, sid, **{**m, "slots": set(m.get("slots", ())),
+                                                             "files": Counter(m.get("files") or {}),
+                                                             "tools": Counter(m.get("tools") or {})})
         status.append((name, tilde(root), "ok", count))
 
 
@@ -334,8 +363,31 @@ def parse_codex_file(path):
             git = p.get("git") if isinstance(p.get("git"), dict) else {}
             meta.setdefault("repo", git.get("repository_url"))
             meta.setdefault("branch", git.get("branch"))
-        elif kind == "response_item" and p.get("role") == "user" and not meta.get("prompt"):
-            meta["prompt"] = clean_title(first_text(p.get("content")))
+        elif kind == "response_item" and p.get("role") == "user":
+            text = clean_title(first_text(p.get("content")), limit=240)
+            if text:
+                meta.setdefault("prompt", clean_title(text))
+                if len(meta.setdefault("prompts", [])) < MAX_PROMPTS:
+                    meta["prompts"].append(text)
+        elif kind == "response_item" and p.get("type") in ("function_call", "custom_tool_call", "local_shell_call"):
+            name = p.get("name") or p.get("type")
+            meta.setdefault("tools", Counter())[name] += 1
+            raw = p.get("input") if isinstance(p.get("input"), str) else p.get("arguments") or ""
+            args = {}
+            if isinstance(raw, str) and raw.startswith("{"):
+                try:
+                    args = json.loads(raw)
+                except ValueError:
+                    args = {}
+            for path in PATCH_FILE.findall(raw if isinstance(raw, str) else ""):
+                meta.setdefault("files", Counter())[tilde(path.strip())] += 1
+            cmd = args.get("cmd") or args.get("command") or (p.get("action") or {}).get("command")
+            if isinstance(cmd, list):
+                cmd = " ".join(str(c) for c in cmd)
+            if cmd and len(meta.setdefault("commands", [])) < MAX_COMMANDS:
+                cmd = clean_title(cmd, limit=140)
+                if cmd:
+                    meta["commands"].append(cmd)
         elif kind == "turn_context":
             model = p.get("model") or model
             provider = p.get("model_provider_id") or p.get("model_provider") or provider
@@ -405,7 +457,9 @@ def collect_codex(usage, root, status, cache=None):
             title = clean_title(titles.get(session) or titles.get(meta.get("session")))
             usage.note("codex", prof, session, title=title, title_src="index" if title else None,
                        cwd=meta.get("cwd"), repo=meta.get("repo"), branch=meta.get("branch"),
-                       prompt=meta.get("prompt"), slots=set(meta.get("slots", ())))
+                       prompt=meta.get("prompt"), slots=set(meta.get("slots", ())),
+                       prompts=meta.get("prompts"), files=meta.get("files"), tools=meta.get("tools"),
+                       commands=meta.get("commands"))
     status.append(("codex", tilde(root), "ok", count))
 
 
@@ -427,6 +481,26 @@ def collect_copilot(usage, db_path, status):
             info.update({r[0]: r[1:] for r in con.execute(
                 f"SELECT id, cwd, repository, branch, summary FROM sessions WHERE id IN ({','.join('?' * len(chunk))})",
                 chunk)})
+        extra = defaultdict(lambda: {"prompts": [], "files": Counter(), "tools": Counter(), "refs": []})
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            for sid, msg in con.execute(
+                    f"SELECT session_id, user_message FROM turns WHERE session_id IN ({marks}) ORDER BY session_id, turn_index",
+                    chunk):
+                text = clean_title(msg, limit=240)
+                if text and len(extra[sid]["prompts"]) < MAX_PROMPTS:
+                    extra[sid]["prompts"].append(text)
+            for sid, path, tool in con.execute(
+                    f"SELECT session_id, file_path, tool_name FROM session_files WHERE session_id IN ({marks})", chunk):
+                if path:
+                    extra[sid]["files"][tilde(path)] += 1
+                extra[sid]["tools"][tool or "?"] += 1
+            for sid, kind, value in con.execute(
+                    f"SELECT session_id, ref_type, ref_value FROM session_refs WHERE session_id IN ({marks})", chunk):
+                ref = clean_title(f"{kind}: {value}", limit=140)
+                if ref and len(extra[sid]["refs"]) < MAX_REFS:
+                    extra[sid]["refs"].append(ref)
         con.close()
     except sqlite3.Error as exc:
         status.append(("copilot", tilde(db_path), f"error: {exc}", 0))
@@ -439,8 +513,10 @@ def collect_copilot(usage, db_path, status):
     for sid, (cwd, repo, branch, summary) in info.items():
         if ("copilot", "github-copilot", sid) in usage.sessions:
             title = clean_title(summary)
+            x = extra.get(sid) or {}
             usage.note("copilot", "github-copilot", sid, title=title, title_src="summary" if title else None,
-                       cwd=cwd, repo=repo, branch=branch)
+                       cwd=cwd, repo=repo, branch=branch, prompts=x.get("prompts"), files=x.get("files"),
+                       tools=x.get("tools"), refs=x.get("refs"))
     status.append(("copilot", tilde(db_path), "ok", count))
 
 
@@ -460,7 +536,20 @@ def collect_proxy(usage, log_path, status):
     status.append(("foundry-proxy", tilde(log_path), "ok", count))
 
 
-def session_rows(usage):
+def session_detail(s):
+    """What happened in a session: prompts, files edited, commands, tools, and refs (all redacted)."""
+    return {
+        "prompts": s["prompts"],
+        "files": s["files"].most_common(25),
+        "files_total": len(s["files"]),
+        "commands": s["commands"],
+        "tools": s["tools"].most_common(12),
+        "refs": s["refs"],
+        "models": s["models"].most_common(4),
+    }
+
+
+def session_rows(usage, detail=False):
     """Flat per-session rows (sessions with usage in the window), newest activity first."""
     out = []
     for (tool, profile, sid), s in usage.sessions.items():
@@ -477,6 +566,7 @@ def session_rows(usage):
             "active_min": len({x for x in s["slots"] if x is not None}) * SLOT_MINUTES,
             "requests": s["requests"], "total": s["total"], "uncached": s["uncached"], "output": s["output"],
             "model": s["models"].most_common(1)[0][0] if s["models"] else None,
+            **({"detail": session_detail(s)} if detail else {}),
         })
     out.sort(key=lambda r: r["last"], reverse=True)
     return out
