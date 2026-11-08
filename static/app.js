@@ -13,6 +13,8 @@ const GROUPS = [
   { key: "codex:personal-chatgpt", label: "Codex · personal", color: "#c98500" },
   { key: "codex:work-foundry", label: "Codex · Foundry", color: "#d55181" },
   { key: "copilot:github-copilot", label: "Copilot", color: "#008300" },
+  { key: "claude-code:legacy", label: "Claude · legacy", color: "#9085e9" },
+  { key: "claude-code:no-profile", label: "Claude · no profile", color: "#e66767" },
 ];
 const OTHER = { key: "other", label: "Other", color: "#8f8e86" };
 const GROUP_BY_KEY = new Map(GROUPS.map((g) => [g.key, g]));
@@ -524,8 +526,14 @@ function renderSources(allRows, now) {
     "The proxy is not added to totals because it overlaps Codex Foundry sessions.");
   const parts = [table, note];
   if (data.meta.config_error) parts.push(el("p", { class: "status warning" }, el("span", { "aria-hidden": "true", text: "!" }), `Budget config: ${data.meta.config_error}`));
+  const m = data.meta;
+  $("sources-sub").textContent = `collected in ${exact.format(m.collect_ms)} ms · ${exact.format(m.cache_misses)} files re-read, ${exact.format(m.cache_hits)} cached · every ${m.interval}s`;
+  if (m.history) {
+    parts.push(el("p", { class: "muted" },
+      `History store ${m.history}: ${exact.format(m.history_rows)} hourly rows since ${m.history_since ? dayFmt.format(new Date(m.history_since)) : "—"}. `,
+      m.history_only_rows ? `${exact.format(m.history_only_rows)} rows in this window come only from history (their transcripts are gone).` : "Every row in this window still has its source transcript."));
+  }
   $("sources-body").replaceChildren(...parts);
-  $("sources-sub").textContent = `collected in ${exact.format(data.meta.collect_ms)} ms · every ${data.meta.interval}s`;
   $("foot").replaceChildren(
     el("div", { text: `Timezone ${data.meta.tz}` }),
     el("div", { text: `History ${data.meta.days} days` }),

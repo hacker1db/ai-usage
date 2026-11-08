@@ -11,6 +11,8 @@ report broken down by **tool + profile + model + day**.
 | Claude Code | `personal` | `~/.claude-personal/projects/**/*.jsonl` | Personal Claude subscription |
 | Claude Code | `work-subscription` | `~/.claude-subscription/projects/**/*.jsonl` | Work Claude subscription |
 | Claude Code | `work-foundry` | `~/.claude-foundry/projects/**/*.jsonl` | Claude on Azure AI Foundry |
+| Claude Code | `legacy` | `~/.claude.retired-*/projects/**/*.jsonl` | the single `~/.claude` dir before the 2026-10-18 profile split (personal and work mixed) |
+| Claude Code | `no-profile` | `~/.claude/projects/**/*.jsonl` | sessions launched without `CLAUDE_CONFIG_DIR`; should stay empty |
 | Codex CLI | `personal-chatgpt` / `work-foundry` | `~/.codex/sessions`, `~/.codex/archived_sessions` | Profile comes from the session's `model_provider` (`openai` vs `foundry`) |
 | GitHub Copilot CLI | `github-copilot` | `~/.copilot/session-store.db` table `assistant_usage_events` | Opened `mode=ro` |
 | foundry-entra-proxy | client User-Agent | `~/Library/Logs/foundry-entra-proxy/proxy.log` | `"msg":"request"` slog lines; shown as a cross-check, **not** added to totals because it overlaps Codex `work-foundry` |
@@ -69,6 +71,13 @@ python3 -I dashboard.py                    # foreground; Ctrl-C to stop
   loopback listener (DNS rebinding), requires a custom header for `POST /api/refresh` (no
   cross-site triggering), and sends a strict CSP. The snapshot holds usage counters, model
   names, and session counts, never prompt or response text.
+- **History store:** every collection is merged into `data/hourly.json` (gitignored), so usage
+  survives Claude Code's transcript cleanup (`cleanupPeriodDays`, 30 days by default) and
+  deleted Codex rollouts. A past hour only grows: a live row with fewer requests than the
+  stored one means transcripts were deleted, so the stored row is kept. The Sources panel
+  shows how many rows in the window come only from history. Delete the file to rebuild it.
+- **Fast refreshes:** parsed transcripts are cached by size and mtime, so a refresh re-reads
+  only new or growing files (about 0.2-0.3 s after the first full scan).
 - Logs: `~/Library/Logs/ai-usage/dashboard.log`. The LaunchAgent runs `dashboard.py` from
   this checkout, so rerun `install-dashboard.sh` after moving it (for example after merging
   to `main`).
@@ -105,7 +114,7 @@ python3 -I ~/Developer/skills/feature-ai-work-report-skill/skills/ai-work-report
 ## Cross-checks and gaps
 
 - `ccusage` (optional, needs network; pin versions):
-  `CLAUDE_CONFIG_DIR=~/.claude-personal,~/.claude-subscription,~/.claude-foundry npx ccusage@<version> daily`
+  `CLAUDE_CONFIG_DIR=~/.claude-personal,~/.claude-subscription,~/.claude-foundry,~/.claude.retired-20261018 npx ccusage@<version> daily`
   and `npx @ccusage/codex@<version> daily`. ccusage merges profiles, so use this
   repo for per-profile separation.
 - Copilot premium-request billing is authoritative only in GitHub billing. With

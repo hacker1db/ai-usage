@@ -37,6 +37,7 @@ SECURITY_HEADERS = {
     "Cache-Control": "no-cache",
 }
 PERIODS = ("day", "week", "month")
+KEY_COLS = 4  # hour, tool, profile, model
 
 
 def load_collect():
@@ -78,12 +79,68 @@ def load_budgets(path):
     return budgets, "; ".join(problems) or None
 
 
+class HistoryStore:
+    """Hourly rows kept on disk so usage survives tools deleting old transcripts.
+
+    Rows are keyed by (hour, tool, profile, model) and one key can combine several transcripts.
+    A past hour's usage only grows, so a live row replaces the stored one unless it has fewer
+    requests (some of its transcripts were deleted); stored rows the live scan no longer sees at
+    all are kept as they are. Delete the file to rebuild it from the current transcripts.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        self.rows = {}
+        if path and os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    saved = json.load(fh)
+                if saved.get("columns") == COLUMNS:
+                    self.rows = {tuple(r[:KEY_COLS]): r for r in saved.get("rows", [])}
+                else:
+                    print(f"history: column layout changed; starting fresh ({path})", file=sys.stderr)
+            except (OSError, ValueError) as exc:
+                print(f"history: could not read {path}: {exc}; starting fresh", file=sys.stderr)
+
+    def merge(self, live_rows):
+        """Merge a live scan; returns the keys whose stored row outlived (part of) its transcripts."""
+        changed, live_keys, held = False, set(), set()
+        req = COLUMNS.index("requests")
+        for r in live_rows:
+            key = tuple(r[:KEY_COLS])
+            live_keys.add(key)
+            old = self.rows.get(key)
+            if old is not None and r[req] < old[req]:
+                held.add(key)
+                continue
+            if old != r:
+                self.rows[key] = r
+                changed = True
+        if changed:
+            self.save()
+        return held | (set(self.rows) - live_keys)
+
+    def save(self):
+        if not self.path:
+            return
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        tmp = f"{self.path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"columns": COLUMNS, "rows": sorted(self.rows.values())}, fh, separators=(",", ":"))
+        os.replace(tmp, self.path)
+
+    def since(self, first_hour):
+        return [r for r in self.rows.values() if r[0] >= first_hour]
+
+
 class Collector:
     """Builds snapshots on a timer, or right away when asked."""
 
     def __init__(self, args):
         self.args = args
         self.collect = load_collect()
+        self.cache = self.collect.FileCache()
+        self.history = HistoryStore(args.history)
         self.lock = threading.Lock()
         self.wake = threading.Event()
         self.body, self.etag = b"{}", '"empty"'
@@ -95,13 +152,19 @@ class Collector:
         now = dt.datetime.now().astimezone()
         cutoff = (now - dt.timedelta(days=a.days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
         usage, status = c.Usage(cutoff, bucket="hour"), []
-        c.collect_claude(usage, list(c.CLAUDE_PROFILES.items()), status)
-        c.collect_codex(usage, a.codex_home, status)
+        self.cache.start()
+        c.collect_claude(usage, c.default_claude_dirs(), status, self.cache)
+        c.collect_codex(usage, a.codex_home, status, self.cache)
         c.collect_copilot(usage, a.copilot_db, status)
         c.collect_proxy(usage, a.proxy_log, status)
+        self.cache.prune()
         budgets, budget_error = load_budgets(a.config)
-        rows = [[k[3], k[0], k[1], k[2], *(r[m] for m in c.METRICS), len(r["sessions"]), round(r["copilot_aiu"], 4)]
-                for k, r in sorted(usage.rows.items(), key=lambda kv: (kv[0][3], kv[0][:3]))]
+        live = [[k[3], k[0], k[1], k[2], *(r[m] for m in c.METRICS), len(r["sessions"]), round(r["copilot_aiu"], 4)]
+                for k, r in usage.rows.items()]
+        first_hour = cutoff.strftime("%Y-%m-%dT%H:00")
+        held = self.history.merge(live)
+        rows = sorted(self.history.since(first_hour))
+        kept = sum(1 for k in held if k[0] >= first_hour)
         return {
             "meta": {
                 "generated": now.isoformat(timespec="seconds"),
@@ -113,6 +176,12 @@ class Collector:
                 "collect_ms": int((time.monotonic() - started) * 1000),
                 "config": c.tilde(a.config) if a.config else None,
                 "config_exists": bool(a.config and os.path.exists(a.config)),
+                "cache_hits": self.cache.hits,
+                "cache_misses": self.cache.misses,
+                "history": c.tilde(a.history) if a.history else None,
+                "history_rows": len(self.history.rows),
+                "history_only_rows": max(kept, 0),
+                "history_since": min(self.history.rows)[0] if self.history.rows else None,
                 "config_error": budget_error,
             },
             "sources": [dict(zip(("source", "path", "status", "requests"), s)) for s in status],
@@ -133,7 +202,9 @@ class Collector:
         with self.lock:
             self.body, self.etag, self.last_error = body, etag, None
         m = snap["meta"]
-        print(f"collected {len(snap['rows'])} rows in {m['collect_ms']} ms", file=sys.stderr)
+        print(f"collected {len(snap['rows'])} rows in {m['collect_ms']} ms "
+              f"(files re-read {m['cache_misses']}, cached {m['cache_hits']}, history-only rows {m['history_only_rows']})",
+              file=sys.stderr)
 
     def run(self):
         # main() already ran the first refresh; wait, then collect on each tick or wake-up.
@@ -222,6 +293,9 @@ def main():
     ap.add_argument("--days", type=int, default=35, help="history to load in days (default 35)")
     ap.add_argument("--config", default=os.path.join(HERE, "dashboard.json"),
                     help="budgets file (default ./dashboard.json; see dashboard.example.json)")
+    ap.add_argument("--history", default=os.path.join(HERE, "data", "hourly.json"),
+                    help="hourly history store, kept after tools delete transcripts (default ./data/hourly.json; "
+                         "'' to disable)")
     ap.add_argument("--codex-home", default=os.environ.get("CODEX_HOME", "~/.codex"))
     ap.add_argument("--copilot-db", default="~/.copilot/session-store.db")
     ap.add_argument("--proxy-log", default="~/Library/Logs/foundry-entra-proxy/proxy.log")

@@ -92,40 +92,146 @@ class Usage:
         return True
 
 
-def collect_claude(usage, dirs, status):
+class FileCache:
+    """Parsed records per (parser, file), reused while the file's size and mtime are unchanged.
+
+    The dashboard keeps one instance across refreshes so only new or growing transcripts are
+    re-read; a one-shot collect.py run uses a throwaway instance.
+    """
+
+    def __init__(self):
+        self.entries = {}
+        self.hits = self.misses = 0
+        self.live = set()
+
+    def records(self, path, parse):
+        try:
+            st = os.stat(path)
+        except OSError:
+            return []
+        key, sig = (parse.__name__, path), (st.st_size, st.st_mtime_ns)
+        self.live.add(key)
+        hit = self.entries.get(key)
+        if hit and hit[0] == sig:
+            self.hits += 1
+            return hit[1]
+        self.misses += 1
+        recs = parse(path)
+        self.entries[key] = (sig, recs)
+        return recs
+
+    def start(self):
+        self.hits = self.misses = 0
+        self.live = set()
+
+    def prune(self):
+        """Forget files that weren't seen in the last collection (deleted or out of window)."""
+        for key in set(self.entries) - self.live:
+            del self.entries[key]
+
+
+def default_claude_dirs():
+    """Current profiles first, then retired ~/.claude copies ("legacy"), then a live ~/.claude
+    ("no-profile": sessions launched without CLAUDE_CONFIG_DIR). Dedupe keeps the first hit."""
+    dirs = list(CLAUDE_PROFILES.items())
+    for path in sorted(glob.glob(os.path.join(HOME, ".claude.retired-*"))):
+        if os.path.isdir(os.path.join(path, "projects")):
+            dirs.append((tilde(path), "legacy"))
+    if os.path.isdir(os.path.join(HOME, ".claude", "projects")):
+        dirs.append(("~/.claude", "no-profile"))
+    return dirs
+
+
+def parse_claude_file(path):
+    """Usage records from one Claude Code transcript: (dedupe key, model, ts, session, metrics)."""
+    out, fallback = [], os.path.basename(path)[:-6]
+    for e in iter_jsonl(path):
+        if e.get("type") != "assistant":
+            continue
+        msg = e.get("message") or {}
+        u = msg.get("usage") or {}
+        if not u or msg.get("model") == "<synthetic>":
+            continue
+        key = (msg.get("id"), e.get("requestId"))
+        cr, cw = u.get("cache_read_input_tokens", 0) or 0, u.get("cache_creation_input_tokens", 0) or 0
+        out.append((key if key != (None, None) else None, msg.get("model"), parse_ts(e.get("timestamp")),
+                    e.get("sessionId") or fallback,
+                    {"input": (u.get("input_tokens", 0) or 0) + cr + cw, "cached": cr, "cache_write": cw,
+                     "output": u.get("output_tokens", 0)}))
+    return out
+
+
+def collect_claude(usage, dirs, status, cache=None):
+    cache = cache or FileCache()
+    # Streaming writes one line per content block with the same usage, and the same message can
+    # exist in a retired copy of a profile dir; dedupe on (message.id, requestId) across all dirs.
+    seen = set()
     for raw, label in dirs:
         root = os.path.realpath(os.path.expanduser(raw))
         name = f"claude-code:{label}"
         if not os.path.isdir(os.path.join(root, "projects")):
             status.append((name, tilde(root), "not found", 0))
             continue
-        seen, count = set(), 0
+        count = 0
         for path in glob.glob(os.path.join(root, "projects", "**", "*.jsonl"), recursive=True):
             if os.path.getmtime(path) < usage.cutoff.timestamp():
                 continue
-            for e in iter_jsonl(path):
-                if e.get("type") != "assistant":
-                    continue
-                msg = e.get("message") or {}
-                u = msg.get("usage") or {}
-                if not u or msg.get("model") == "<synthetic>":
-                    continue
-                # Streaming writes one line per content block with the same usage; dedupe.
-                key = (msg.get("id"), e.get("requestId"))
-                if key != (None, None):
+            for key, model, ts, session, m in cache.records(path, parse_claude_file):
+                if key is not None:
                     if key in seen:
                         continue
                     seen.add(key)
-                cr, cw = u.get("cache_read_input_tokens", 0) or 0, u.get("cache_creation_input_tokens", 0) or 0
-                ok = usage.add("claude-code", label, msg.get("model"), parse_ts(e.get("timestamp")),
-                               e.get("sessionId") or os.path.basename(path)[:-6],
-                               input=(u.get("input_tokens", 0) or 0) + cr + cw, cached=cr, cache_write=cw,
-                               output=u.get("output_tokens", 0))
-                count += ok
+                count += usage.add("claude-code", label, model, ts, session, **m)
         status.append((name, tilde(root), "ok", count))
 
 
-def collect_codex(usage, root, status):
+def parse_codex_file(path):
+    """Usage records from one Codex rollout: (response id or None, provider, model, ts, session, metrics)."""
+    provider, model, session = None, None, os.path.basename(path)[:-6]
+    events = list(iter_jsonl(path))
+    has_records = any(e.get("type") == "token_usage_record" for e in events)
+    prev_total, out = None, []
+    for e in events:
+        p = e.get("payload") if isinstance(e.get("payload"), dict) else {}
+        kind = e.get("type")
+        if kind == "session_meta":
+            provider = p.get("model_provider") or provider
+            session = p.get("id") or session
+            model = p.get("model") or model
+        elif kind == "turn_context":
+            model = p.get("model") or model
+            provider = p.get("model_provider_id") or p.get("model_provider") or provider
+        elif p.get("type") == "thread_settings_applied":
+            ts_ = p.get("thread_settings") or {}
+            model = ts_.get("model") or model
+            provider = ts_.get("model_provider_id") or provider
+        u, rid = None, None
+        if kind == "token_usage_record":
+            rid = p.get("response_id")
+            u = p.get("usage") or {}
+        elif not has_records and p.get("type") == "token_count":
+            # Older rollouts: diff the cumulative total so duplicate events don't double count.
+            tot = ((p.get("info") or {}).get("total_token_usage")) or None
+            if not tot:
+                continue
+            if prev_total and tot.get("total_tokens", 0) >= prev_total.get("total_tokens", 0):
+                u = {k: (tot.get(k, 0) or 0) - (prev_total.get(k, 0) or 0) for k in tot}
+            else:
+                u = tot
+            prev_total = tot
+            if not any(u.values()):
+                continue
+        if u is None:
+            continue
+        out.append((rid, provider, model, parse_ts(e.get("timestamp")), session,
+                    {"input": u.get("input_tokens"), "cached": u.get("cached_input_tokens"),
+                     "cache_write": u.get("cache_write_input_tokens"), "output": u.get("output_tokens"),
+                     "reasoning": u.get("reasoning_output_tokens")}))
+    return out
+
+
+def collect_codex(usage, root, status, cache=None):
+    cache = cache or FileCache()
     root = os.path.expanduser(root)
     files = [p for d in ("sessions", "archived_sessions")
              for p in glob.glob(os.path.join(root, d, "**", "*.jsonl"), recursive=True)]
@@ -136,51 +242,13 @@ def collect_codex(usage, root, status):
     for path in files:
         if os.path.getmtime(path) < usage.cutoff.timestamp():
             continue
-        provider, model, session = None, None, os.path.basename(path)[:-6]
-        events = list(iter_jsonl(path))
-        has_records = any(e.get("type") == "token_usage_record" for e in events)
-        prev_total = None
-        for e in events:
-            p = e.get("payload") if isinstance(e.get("payload"), dict) else {}
-            kind = e.get("type")
-            if kind == "session_meta":
-                provider = p.get("model_provider") or provider
-                session = p.get("id") or session
-                model = p.get("model") or model
-            elif kind == "turn_context":
-                model = p.get("model") or model
-                provider = p.get("model_provider_id") or p.get("model_provider") or provider
-            elif p.get("type") == "thread_settings_applied":
-                ts_ = p.get("thread_settings") or {}
-                model = ts_.get("model") or model
-                provider = ts_.get("model_provider_id") or provider
-            u = None
-            if kind == "token_usage_record":
-                rid = p.get("response_id")
+        for rid, provider, model, ts, session, m in cache.records(path, parse_codex_file):
+            if rid is not None:
                 if rid in seen:
                     continue
                 seen.add(rid)
-                u = p.get("usage") or {}
-            elif not has_records and p.get("type") == "token_count":
-                # Older rollouts: diff the cumulative total so duplicate events don't double count.
-                tot = ((p.get("info") or {}).get("total_token_usage")) or None
-                if not tot:
-                    continue
-                if prev_total and tot.get("total_tokens", 0) >= prev_total.get("total_tokens", 0):
-                    u = {k: (tot.get(k, 0) or 0) - (prev_total.get(k, 0) or 0) for k in tot}
-                else:
-                    u = tot
-                prev_total = tot
-                if not any(u.values()):
-                    continue
-            if u is None:
-                continue
             prof = CODEX_PROVIDERS.get(provider or "openai", provider)
-            ok = usage.add("codex", prof, model, parse_ts(e.get("timestamp")), session,
-                           input=u.get("input_tokens"), cached=u.get("cached_input_tokens"),
-                           cache_write=u.get("cache_write_input_tokens"), output=u.get("output_tokens"),
-                           reasoning=u.get("reasoning_output_tokens"))
-            count += ok
+            count += usage.add("codex", prof, model, ts, session, **m)
     status.append(("codex", tilde(root), "ok", count))
 
 
@@ -296,7 +364,7 @@ def main():
     now = dt.datetime.now().astimezone()
     cutoff = (now - dt.timedelta(days=args.days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
     claude = [tuple(c.split("=", 1)) if "=" in c else (c, os.path.basename(c).lstrip(".")) for c in args.claude] \
-        if args.claude else list(CLAUDE_PROFILES.items())
+        if args.claude else default_claude_dirs()
 
     usage, status = Usage(cutoff), []
     collect_claude(usage, claude, status)
