@@ -63,6 +63,19 @@ python3 -I dashboard.py                    # foreground; Ctrl-C to stop
 - **Breakdown, profiles, models, sources:** stacked usage per profile (with a table view),
   a card per profile with sparkline and share, a profile/model table, and collector status
   with the foundry-entra-proxy cross-check.
+- **Work:** what the tokens were spent on, with no skill run needed. A projects chart (tokens and
+  active time per repository, stacked by profile) and a searchable session list: title, project,
+  branch, profile, active time, and tokens. Titles come from each tool (Claude Code `ai-title`,
+  Copilot session summaries, Codex `session_index.jsonl` thread names), else the first prompt,
+  with the ai-work-report skill's secret patterns redacted. Projects resolve to the git root
+  (bare-clone aware) or the repository name. Active time counts 5-minute slots with activity,
+  so idle gaps don't count.
+- **ai-work-report overlay (optional):** run the `ai-work-report` skill with its workdir set to
+  `data/work-report` (and `--out data/work-report/ai-work-report.html`). The dashboard then
+  reads `classified.json` and `narrative.json` and adds a Workstreams card (themes, sessions,
+  tokens, estimated manual and saved hours using the skill's formula), a Workstream column on
+  sessions, and an "Open full report" link served at `/report` in a CSP sandbox. Classified ids
+  can be full session ids or 8-character prefixes, as the skill writes them.
 - **Budgets (optional):** copy `dashboard.example.json` to `dashboard.json` (gitignored) and
   set token budgets per `tool:profile` with a `day`, `week`, or `month` period. Profile cards
   then show percent used and whether the projection exceeds the budget, and a tab whose

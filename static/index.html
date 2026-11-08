@@ -15,6 +15,7 @@
         <a href="#overview" class="nav-item active">Overview</a>
         <a href="#breakdown" class="nav-item">Breakdown</a>
         <a href="#profiles" class="nav-item">Profiles</a>
+        <a href="#work" class="nav-item">Work</a>
         <a href="#models" class="nav-item">Models</a>
         <a href="#sources" class="nav-item">Sources</a>
       </nav>
@@ -78,6 +79,27 @@
       <section id="profiles" aria-labelledby="profiles-title">
         <h2 class="section-title" id="profiles-title">Profiles</h2>
         <div class="grid" id="groups"></div>
+      </section>
+
+      <section id="work" aria-labelledby="work-title">
+        <h2 class="section-title" id="work-title">Work</h2>
+        <div class="card" id="workstreams"></div>
+        <div class="card">
+          <div class="card-head"><h2 id="projects-title">Projects</h2><span class="muted" id="projects-sub"></span></div>
+          <div class="legend" id="projects-legend"></div>
+          <div class="chart-wrap"><svg id="projects-chart" class="chart" role="img" aria-labelledby="projects-title"></svg></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2 id="sessions-title">Sessions</h2>
+            <div class="ledger-tools">
+              <input type="search" id="session-filter" placeholder="Filter by title, project, branch…" aria-label="Filter sessions">
+              <div class="seg" role="group" aria-label="Sort sessions" id="session-sort"></div>
+            </div>
+          </div>
+          <div class="table-scroll tall"><table id="sessions-table"></table></div>
+          <p class="muted small" id="sessions-sub"></p>
+        </div>
       </section>
 
       <section class="card" id="models" aria-labelledby="models-title">

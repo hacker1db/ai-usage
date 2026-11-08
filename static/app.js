@@ -40,7 +40,7 @@ const RANGES = [
 ];
 
 const state = Object.assign(
-  { tab: "all", metric: "total", burn: "3", range: "7d" },
+  { tab: "all", metric: "total", burn: "3", range: "7d", sessionSort: "recent" },
   JSON.parse(localStorage.getItem("ai-usage-ui") || "{}"),
   // Bookmarkable overrides, e.g. /?tab=foundry&range=30d
   Object.fromEntries([...new URLSearchParams(location.search)].filter(([k]) => ["tab", "metric", "burn", "range"].includes(k))),
@@ -57,6 +57,7 @@ const dayFmt = new Intl.DateTimeFormat("en", { weekday: "short", month: "short",
 const hourFmt = new Intl.DateTimeFormat("en", { weekday: "short", month: "short", day: "numeric", hour: "numeric" });
 const shortDay = new Intl.DateTimeFormat("en", { month: "short", day: "numeric" });
 const hourOnly = new Intl.DateTimeFormat("en", { hour: "numeric" });
+const whenFmt = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 function el(tag, attrs = {}, ...kids) {
   const node = tag.startsWith("svg:") ? document.createElementNS(SVG, tag.slice(4)) : document.createElement(tag);
@@ -541,6 +542,213 @@ function renderSources(allRows, now) {
   );
 }
 
+// ---------- work (sessions, projects, ai-work-report overlay) ----------
+
+const SESSION_SORTS = [
+  { id: "recent", label: "Recent" },
+  { id: "tokens", label: "Tokens" },
+  { id: "active", label: "Active time" },
+];
+const SESSION_LIMIT = 150;
+const TITLE_SRC = { ai: "", summary: "", "custom-title": "", index: "", prompt: "first prompt" };
+let sessionFilter = "";
+const hours = (min) => (min >= 60 ? `${(min / 60).toFixed(1)}h` : `${Math.round(min)}m`);
+const sessionMetric = (x) => (state.metric === "requests" ? x.requests : x[state.metric] ?? x.total);
+const groupOfSession = (x) => GROUP_BY_KEY.get(`${x.tool}:${x.profile}`) || OTHER;
+
+function sessionsInRange(now) {
+  const from = new Date(floorHour(now) - (range().hours - 1) * HOUR);
+  return (data.sessions || []).filter((x) => tab().match(x) && new Date(x.last) >= from);
+}
+
+// Map ai-work-report classified session ids (full ids or 8-char prefixes) onto live sessions.
+function classification() {
+  const c = data.work_report?.classified;
+  if (!c) return null;
+  const entries = Object.entries(c.sessions || {});
+  const exactIds = new Map(entries);
+  const themes = new Map((c.themes || []).map((t) => [t.id, t]));
+  const lookup = (id) => exactIds.get(id) || entries.find(([k]) => k.length >= 6 && id.startsWith(k))?.[1] || null;
+  return { themes, lookup };
+}
+
+function fillPlaceholders(text, ctx) {
+  return String(text || "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/\{(pct|tokens|claude_pct):([a-z0-9-]+)\}/g, (_, kind, id) => {
+      const t = ctx.byTheme.get(id);
+      if (!t) return "—";
+      return kind === "tokens" ? fmt(t.total) : `${ctx.total ? Math.round((t.total / ctx.total) * 100) : 0}%`;
+    })
+    .replace(/\{total_tokens\}|\{claude_tokens\}/g, fmt(ctx.total))
+    .replace(/\{top_n\}/g, String(ctx.count))
+    .replace(/\{[^}]*\}/g, "");
+}
+
+function renderWorkstreams(sessions) {
+  const box = $("workstreams");
+  const wr = data.work_report;
+  const cls = classification();
+  const dir = data.meta.work_report_dir || "data/work-report";
+  const runHelp = [
+    el("p", { class: "muted" }, "Run the ai-work-report skill whenever you want themes, estimated hours saved, and a narrative. ",
+      "Point its workdir and output here and this card picks them up on the next refresh:"),
+    el("pre", { class: "cmd", text: `workdir: ${dir}\nbuild:   python3 scripts/build.py ${dir} --days 30 --out ${dir}/ai-work-report.html` }),
+  ];
+  if (!wr || (!cls && !wr.report_mtime)) {
+    box.replaceChildren(...[el("div", { class: "card-head" }, el("h2", { text: "Workstreams" }), el("span", { class: "muted", text: "from the ai-work-report skill" })),
+      ...runHelp, wr?.error ? el("p", { class: "status warning" }, el("span", { "aria-hidden": "true", text: "!" }), wr.error) : null].filter(Boolean));
+    return;
+  }
+  const byTheme = new Map();
+  let total = 0, matched = 0;
+  for (const x of sessions) {
+    const hit = cls?.lookup(x.id);
+    if (!hit || hit.theme === "none") continue;
+    matched++;
+    const t = byTheme.get(hit.theme) || { total: 0, sessions: 0, active: 0, manual: 0, saved: 0 };
+    const ai = Math.max((x.active_min / 60) * 1.5, 0.1);
+    const manual = Math.min(Number(hit.manual_likely) || 0, 16);
+    t.total += sessionMetric(x); t.sessions++; t.active += x.active_min; t.manual += manual; t.saved += Math.max(manual - ai, 0);
+    byTheme.set(hit.theme, t);
+    total += sessionMetric(x);
+  }
+  const n = wr.narrative || {};
+  const ctx = { byTheme, total, count: matched };
+  const rows = [...byTheme.entries()].sort((a, b) => b[1].total - a[1].total);
+  const sum = (k) => rows.reduce((s, [, t]) => s + t[k], 0);
+  const when = wr.classified_mtime || wr.report_mtime;
+  box.replaceChildren(...[
+    el("div", { class: "card-head" }, el("h2", { text: "Workstreams" }),
+      el("span", { class: "muted", text: `ai-work-report · classified ${when ? dayFmt.format(new Date(when)) : "—"} · ${matched} of ${sessions.length} sessions in range matched` })),
+    n.title_html ? el("div", { class: "narrative" }, el("h3", { text: fillPlaceholders(n.title_html, ctx) }),
+      n.thesis_html ? el("p", { text: fillPlaceholders(n.thesis_html, ctx) }) : null) : null,
+    rows.length ? el("div", { class: "table-scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", { class: "left", text: "Workstream" }), el("th", { text: "Sessions" }),
+        el("th", { text: metric().label }), el("th", { text: "Share" }), el("th", { text: "AI active" }),
+        el("th", { text: "Est. manual" }), el("th", { text: "Est. saved" }))),
+      el("tbody", {}, rows.map(([id, t]) => {
+        const theme = cls.themes.get(id) || { name: id };
+        return el("tr", {}, el("td", { class: "title" }, theme.name, theme.d ? el("span", { class: "basis", text: theme.d }) : null),
+          el("td", { text: exact.format(t.sessions) }), el("td", { text: fmt(t.total) }),
+          el("td", { text: total ? `${Math.round((t.total / total) * 100)}%` : "—" }), el("td", { text: hours(t.active) }),
+          el("td", { text: `${t.manual.toFixed(1)}h` }), el("td", { text: `${t.saved.toFixed(1)}h` }));
+      }), el("tr", {}, el("td", { class: "left", text: "Total" }), el("td", { text: exact.format(sum("sessions")) }),
+        el("td", { text: fmt(total) }), el("td", { text: "" }), el("td", { text: hours(sum("active")) }),
+        el("td", { text: `${sum("manual").toFixed(1)}h` }), el("td", { text: `${sum("saved").toFixed(1)}h` }))))) :
+      el("p", { class: "muted", text: "No sessions in this tab and range match the last classification. Try the 30d range or rerun the skill." }),
+    el("p", { class: "muted small", text: "Manual hours are the skill's estimates (capped at 16h per session); saved = manual − AI active time × 1.5, as in the skill's build.py. Estimates, not measurements." }),
+    el("div", { class: "work-actions" },
+      wr.report_mtime ? el("a", { class: "link-btn", href: "/report", target: "_blank", rel: "noopener", text: `Open full report ↗ (${hourFmt.format(new Date(wr.report_mtime))})` }) : null,
+      el("details", {}, el("summary", { class: "muted small", text: "Refresh it with the skill" }), ...runHelp)),
+    wr.error ? el("p", { class: "status warning" }, el("span", { "aria-hidden": "true", text: "!" }), wr.error) : null,
+  ].filter(Boolean));
+}
+
+function renderProjects(sessions) {
+  const svg = $("projects-chart");
+  const byProject = new Map();
+  for (const x of sessions) {
+    const key = x.project || "(unknown)";
+    const p = byProject.get(key) || { name: key, path: x.path, total: 0, active: 0, sessions: 0, groups: new Map() };
+    const v = sessionMetric(x);
+    p.total += v; p.active += x.active_min; p.sessions++;
+    const g = groupOfSession(x);
+    p.groups.set(g.key, (p.groups.get(g.key) || 0) + v);
+    byProject.set(key, p);
+  }
+  let list = [...byProject.values()].sort((a, b) => b.total - a.total);
+  const top = list.slice(0, 12);
+  if (list.length > 12) {
+    const rest = list.slice(12);
+    const other = { name: `${rest.length} other projects`, total: 0, active: 0, sessions: 0, groups: new Map() };
+    for (const p of rest) { other.total += p.total; other.active += p.active; other.sessions += p.sessions;
+      for (const [k, v] of p.groups) other.groups.set(k, (other.groups.get(k) || 0) + v); }
+    top.push(other);
+  }
+  list = top;
+  const rowH = 30;
+  const f = frame(svg, Math.max(list.length * rowH + 30, 80));
+  f.m.left = 210; f.m.right = 150; f.m.top = 6; f.m.bottom = 20;
+  const max = niceMax(Math.max(...list.map((p) => p.total), 1));
+  const x = (v) => f.m.left + (v / max) * (f.width - f.m.left - f.m.right);
+  const order = [...GROUPS, OTHER];
+  const used = new Set();
+  list.forEach((p, i) => {
+    const y = f.m.top + i * rowH;
+    const label = p.name.length > 30 ? `…${p.name.slice(-29)}` : p.name;
+    svg.append(el("svg:text", { x: f.m.left - 10, y: y + rowH / 2 + 4, "text-anchor": "end", fill: "#c3c2b7", text: label }));
+    let base = 0;
+    const segs = order.filter((g) => p.groups.get(g.key) > 0);
+    segs.forEach((g, si) => {
+      const v = p.groups.get(g.key);
+      used.add(g.key);
+      const x0 = x(base) + (si ? 2 : 0), x1 = x(base + v);
+      const w = Math.max(x1 - x0, 1);
+      const last = si === segs.length - 1;
+      const r = last ? Math.min(4, w, 9) : 0;
+      const top0 = y + 6, h = rowH - 12;
+      const d = r
+        ? `M${x0},${top0} H${x0 + w - r} Q${x0 + w},${top0} ${x0 + w},${top0 + r} V${top0 + h - r} Q${x0 + w},${top0 + h} ${x0 + w - r},${top0 + h} H${x0} Z`
+        : `M${x0},${top0} H${x0 + w} V${top0 + h} H${x0} Z`;
+      svg.append(el("svg:path", { d, fill: g.color }));
+      base += v;
+    });
+    svg.append(el("svg:text", { x: x(p.total) + 8, y: y + rowH / 2 + 4, fill: "#f0efec", text: `${fmt(p.total)} · ${hours(p.active)} · ${p.sessions} sess.` }));
+    const hit = el("svg:rect", { x: 0, y, width: f.width, height: rowH, fill: "transparent" });
+    hit.addEventListener("mousemove", (evt) => showTip(evt, p.path ? `${p.name} (${p.path})` : p.name, [
+      ...order.filter((g) => p.groups.get(g.key) > 0).map((g) => [g.label, exact.format(Math.round(p.groups.get(g.key))), g.color]),
+      ["Active time", hours(p.active)], ["Sessions", exact.format(p.sessions)]]));
+    hit.addEventListener("mouseleave", hideTip);
+    svg.append(hit);
+  });
+  if (!list.length) svg.append(el("svg:text", { x: 10, y: 30, text: "No sessions in this tab and range." }));
+  $("projects-sub").textContent = `${metric().unit} by project · last ${range().label} · active time = 5-minute slots with activity`;
+  $("projects-legend").replaceChildren(...order.filter((g) => used.has(g.key)).map((g) => el("span", {}, swatch(g.color), g.label)));
+}
+
+function renderSessions(sessions) {
+  renderSeg("session-sort", SESSION_SORTS, "sessionSort");
+  const cls = classification();
+  const q = sessionFilter.trim().toLowerCase();
+  let list = sessions.filter((x) => !q || [x.title, x.project, x.path, x.branch, x.repo, x.model, x.profile]
+    .some((v) => v && String(v).toLowerCase().includes(q)));
+  const sorters = { recent: (a, b) => (a.last < b.last ? 1 : -1), tokens: (a, b) => sessionMetric(b) - sessionMetric(a), active: (a, b) => b.active_min - a.active_min };
+  list = list.sort(sorters[state.sessionSort] || sorters.recent);
+  const shown = list.slice(0, SESSION_LIMIT);
+  const head = el("tr", {}, el("th", { class: "left", text: "Last active" }), el("th", { class: "left", text: "Session" }),
+    el("th", { class: "left", text: "Project" }), el("th", { class: "left", text: "Profile" }),
+    cls ? el("th", { class: "left", text: "Workstream" }) : null,
+    el("th", { text: "Active" }), el("th", { text: metric().label }));
+  const body = shown.map((x) => {
+    const g = groupOfSession(x);
+    const hit = cls?.lookup(x.id);
+    const theme = hit && hit.theme !== "none" ? cls.themes.get(hit.theme)?.name || hit.theme : null;
+    const src = TITLE_SRC[x.title_src];
+    return el("tr", {},
+      el("td", { class: "left", text: whenFmt.format(new Date(x.last)) }),
+      el("td", { class: "title" }, x.title || el("span", { class: "muted", text: "(untitled)" }),
+        src ? el("span", { class: "src", text: src }) : null,
+        el("span", { class: "basis", text: [hit?.basis, x.branch && `⎇ ${x.branch}`, x.model].filter(Boolean).join(" · ") })),
+      el("td", { class: "left wrap", title: x.path || "", text: x.project || "—" }),
+      el("td", { class: "left" }, el("span", { class: "chip" }, swatch(g.color), g.label)),
+      cls ? el("td", { class: "left wrap", text: theme || (hit ? "housekeeping" : "—") }) : null,
+      el("td", { text: hours(x.active_min) }),
+      el("td", { title: exact.format(sessionMetric(x)), text: fmt(sessionMetric(x)) }));
+  });
+  $("sessions-table").replaceChildren(el("thead", {}, head),
+    el("tbody", {}, body.length ? body : el("tr", {}, el("td", { colspan: 8, class: "empty", text: "No sessions match." }))));
+  $("sessions-sub").textContent = `${exact.format(list.length)} sessions in the last ${range().label}${list.length > SESSION_LIMIT ? `, showing ${SESSION_LIMIT}` : ""}. ` +
+    "Titles come from each tool (Claude AI titles, Copilot summaries, Codex thread names), else the first prompt; secrets are redacted.";
+}
+
+function renderWork(now) {
+  const sessions = sessionsInRange(now);
+  renderWorkstreams(sessions);
+  renderProjects(sessions);
+  renderSessions(sessions);
+}
+
 function render() {
   if (!data) return;
   const now = new Date();
@@ -554,6 +762,7 @@ function render() {
   renderHero(rows, now, groupKeys);
   renderBars(rows, now);
   renderGroups(rows, now);
+  renderWork(now);
   renderModels(rows, now);
   renderSources(data.rows, now);
 }
@@ -607,7 +816,9 @@ let resizeTimer;
 window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 150); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 
-const sections = ["overview", "breakdown", "profiles", "models", "sources"];
+$("session-filter").addEventListener("input", (e) => { sessionFilter = e.target.value; if (data) renderSessions(sessionsInRange(new Date())); });
+
+const sections = ["overview", "breakdown", "profiles", "work", "models", "sources"];
 const navObserver = new IntersectionObserver((entries) => {
   for (const e of entries) {
     if (!e.isIntersecting) continue;

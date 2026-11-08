@@ -37,6 +37,11 @@ SECURITY_HEADERS = {
     "Cache-Control": "no-cache",
 }
 PERIODS = ("day", "week", "month")
+REPORT_NAME = "ai-work-report.html"
+# The skill's report is self-contained HTML with inline scripts and Google Fonts. Serve it sandboxed
+# (opaque origin) so its scripts can't call this dashboard's API.
+REPORT_CSP = ("sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; img-src data:; "
+              "style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com")
 KEY_COLS = 4  # hour, tool, profile, model
 
 
@@ -91,20 +96,28 @@ class HistoryStore:
     def __init__(self, path):
         self.path = path
         self.rows = {}
+        self.sessions = {}
         if path and os.path.exists(path):
             try:
                 with open(path, encoding="utf-8") as fh:
                     saved = json.load(fh)
                 if saved.get("columns") == COLUMNS:
                     self.rows = {tuple(r[:KEY_COLS]): r for r in saved.get("rows", [])}
+                    self.sessions = {f"{x['tool']}|{x['profile']}|{x['id']}": x for x in saved.get("sessions", [])}
                 else:
                     print(f"history: column layout changed; starting fresh ({path})", file=sys.stderr)
             except (OSError, ValueError) as exc:
                 print(f"history: could not read {path}: {exc}; starting fresh", file=sys.stderr)
 
-    def merge(self, live_rows):
+    def merge(self, live_rows, live_sessions=()):
         """Merge a live scan; returns the keys whose stored row outlived (part of) its transcripts."""
         changed, live_keys, held = False, set(), set()
+        for x in live_sessions:
+            key = f"{x['tool']}|{x['profile']}|{x['id']}"
+            old = self.sessions.get(key)
+            if old is None or (x["requests"] >= old["requests"] and x != old):
+                self.sessions[key] = x
+                changed = True
         req = COLUMNS.index("requests")
         for r in live_rows:
             key = tuple(r[:KEY_COLS])
@@ -126,11 +139,43 @@ class HistoryStore:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         tmp = f"{self.path}.tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"columns": COLUMNS, "rows": sorted(self.rows.values())}, fh, separators=(",", ":"))
+            json.dump({"columns": COLUMNS, "rows": sorted(self.rows.values()),
+                       "sessions": sorted(self.sessions.values(), key=lambda x: x["last"])}, fh, separators=(",", ":"))
         os.replace(tmp, self.path)
 
     def since(self, first_hour):
         return [r for r in self.rows.values() if r[0] >= first_hour]
+
+    def sessions_since(self, cutoff_iso):
+        return sorted((x for x in self.sessions.values() if x["last"] >= cutoff_iso), key=lambda x: x["last"], reverse=True)
+
+
+def load_work_report(folder):
+    """Read the ai-work-report skill's classified.json / narrative.json from its workdir, if present."""
+    if not folder or not os.path.isdir(folder):
+        return None
+    out, problems = {"dir": folder}, []
+    for name in ("classified", "narrative"):
+        path = os.path.join(folder, f"{name}.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                out[name] = json.load(fh)
+            out[f"{name}_mtime"] = dt.datetime.fromtimestamp(os.path.getmtime(path)).astimezone().isoformat(timespec="seconds")
+        except (OSError, ValueError) as exc:
+            problems.append(f"{name}.json: {exc}")
+    report = os.path.join(folder, REPORT_NAME)
+    if os.path.exists(report):
+        out["report_mtime"] = dt.datetime.fromtimestamp(os.path.getmtime(report)).astimezone().isoformat(timespec="seconds")
+    out["error"] = "; ".join(problems) or None
+    if "classified" not in out and "report_mtime" not in out:
+        return {"dir": folder, "error": out["error"]} if problems else None
+    c = out.get("classified")
+    if c is not None and not (isinstance(c, dict) and isinstance(c.get("themes"), list) and isinstance(c.get("sessions"), dict)):
+        out.pop("classified")
+        out["error"] = "classified.json: expected {themes: [...], sessions: {...}}"
+    return out
 
 
 class Collector:
@@ -162,9 +207,11 @@ class Collector:
         live = [[k[3], k[0], k[1], k[2], *(r[m] for m in c.METRICS), len(r["sessions"]), round(r["copilot_aiu"], 4)]
                 for k, r in usage.rows.items()]
         first_hour = cutoff.strftime("%Y-%m-%dT%H:00")
-        held = self.history.merge(live)
+        sessions_live = c.session_rows(usage)
+        held = self.history.merge(live, sessions_live)
         rows = sorted(self.history.since(first_hour))
         kept = sum(1 for k in held if k[0] >= first_hour)
+        sessions = self.history.sessions_since(cutoff.isoformat(timespec="seconds"))
         return {
             "meta": {
                 "generated": now.isoformat(timespec="seconds"),
@@ -182,12 +229,15 @@ class Collector:
                 "history_rows": len(self.history.rows),
                 "history_only_rows": max(kept, 0),
                 "history_since": min(self.history.rows)[0] if self.history.rows else None,
+                "work_report_dir": c.tilde(a.work_report) if a.work_report else None,
                 "config_error": budget_error,
             },
             "sources": [dict(zip(("source", "path", "status", "requests"), s)) for s in status],
             "budgets": budgets,
             "columns": COLUMNS,
             "rows": rows,
+            "sessions": sessions,
+            "work_report": load_work_report(a.work_report),
         }
 
     def refresh(self):
@@ -261,6 +311,14 @@ def make_handler(collector, allowed_hosts):
                     self.send(304, extra={"ETag": etag})
                 else:
                     self.send(200, body, extra={"ETag": etag})
+            elif path == "/report":
+                report = os.path.join(collector.args.work_report or "", REPORT_NAME)
+                try:
+                    with open(report, "rb") as fh:
+                        self.send(200, fh.read(), "text/html; charset=utf-8",
+                                  extra={"Content-Security-Policy": REPORT_CSP})
+                except OSError:
+                    self.send(404, b'{"error":"no ai-work-report.html in the work report folder yet"}')
             elif path in STATIC_FILES:
                 name, ctype = STATIC_FILES[path]
                 try:
@@ -296,6 +354,9 @@ def main():
     ap.add_argument("--history", default=os.path.join(HERE, "data", "hourly.json"),
                     help="hourly history store, kept after tools delete transcripts (default ./data/hourly.json; "
                          "'' to disable)")
+    ap.add_argument("--work-report", default=os.path.join(HERE, "data", "work-report"),
+                    help="ai-work-report skill workdir to overlay (classified.json, narrative.json, "
+                         f"{REPORT_NAME}; default ./data/work-report)")
     ap.add_argument("--codex-home", default=os.environ.get("CODEX_HOME", "~/.codex"))
     ap.add_argument("--copilot-db", default="~/.copilot/session-store.db")
     ap.add_argument("--proxy-log", default="~/Library/Logs/foundry-entra-proxy/proxy.log")

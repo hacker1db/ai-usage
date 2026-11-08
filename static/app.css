@@ -164,3 +164,30 @@ tr:hover td { background: var(--surface-2); }
   main { padding: 18px; }
   .hero-stats { grid-template-columns: repeat(2, minmax(120px, auto)); }
 }
+
+/* Work section */
+#work { display: flex; flex-direction: column; gap: 14px; }
+.ledger-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+input[type="search"] {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary);
+  border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; width: 260px;
+}
+input[type="search"]::placeholder { color: var(--text-muted); }
+.table-scroll.tall { max-height: 620px; }
+td.title { white-space: normal; min-width: 260px; max-width: 460px; text-align: left; line-height: 1.35; }
+td.title .src { color: var(--text-muted); font-size: 11px; margin-left: 6px; }
+td.title .basis { display: block; color: var(--text-muted); font-size: 12px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px;
+  background: var(--surface-3); color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.small { font-size: 12px; }
+.narrative h3 { margin: 4px 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.narrative p { margin: 0 0 12px; color: var(--text-secondary); line-height: 1.5; max-width: 900px; }
+.work-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.link-btn { color: var(--text-primary); text-decoration: none; border: 1px solid var(--border); padding: 7px 12px;
+  border-radius: 8px; background: var(--surface-2); font-size: 13px; }
+.link-btn:hover { background: var(--surface-3); }
+code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px;
+  font-size: 12px; color: var(--text-secondary); }
+pre.cmd { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  color: var(--text-secondary); font-size: 12px; overflow-x: auto; margin: 8px 0 0; }
+#sessions-table td.wrap { white-space: normal; max-width: 170px; overflow-wrap: anywhere; line-height: 1.35; }

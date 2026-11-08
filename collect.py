@@ -14,9 +14,10 @@ import datetime as dt
 import glob
 import json
 import os
+import re
 import sqlite3
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 HOME = os.path.expanduser("~")
 METRICS = ("requests", "input", "cached", "cache_write", "output", "reasoning", "total")
@@ -29,6 +30,76 @@ CLAUDE_PROFILES = {
 }
 # Codex model_provider id -> profile label.
 CODEX_PROVIDERS = {"openai": "personal-chatgpt", "foundry": "work-foundry"}
+
+SLOT_MINUTES = 5  # active time = distinct 5-minute slots with activity, so idle gaps don't count
+
+# Secret patterns from the ai-work-report skill's claude_digest.py; titles and prompt snippets
+# pass through redact() before they reach a report or the dashboard.
+SECRET_PATTERNS = [
+    re.compile(r"(?i)(api[_-]?key|token|secret|password|passwd|pwd|client[_-]?secret)\s*[:=]\s*\S+"),
+    re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/-]{16,}=*"),
+    re.compile(r"\b(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}"
+               r"|xox[baprs]-[A-Za-z0-9-]{10,})\b"),
+    re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
+]
+INJECTED_PREFIXES = ("<", "# AGENTS.md", "# CLAUDE.md", "Caveat:")
+
+
+def redact(text):
+    for pattern in SECRET_PATTERNS:
+        text = pattern.sub("[REDACTED]", text)
+    return text
+
+
+def clean_title(text, limit=100):
+    """One redacted line of plain text, or None for empty or tool-injected text."""
+    if not isinstance(text, str):
+        return None
+    text = text.strip()
+    if not text or text.startswith(INJECTED_PREFIXES) or "<INSTRUCTIONS>" in text:
+        return None
+    text = re.sub(r"<[^>]{1,80}>", " ", text)
+    line = " ".join(text.split())
+    if not line:
+        return None
+    line = redact(line)
+    return line if len(line) <= limit else line[: limit - 1].rstrip() + "…"
+
+
+def slot_of(ts):
+    return int(ts.timestamp() // (SLOT_MINUTES * 60)) if ts else None
+
+
+_PROJECTS = {}
+
+
+def project_of(cwd=None, repo=None):
+    """Short project name: the repository name, else the git root (bare-clone aware), else the path."""
+    if repo:
+        name = repo.rstrip("/").removesuffix(".git").replace(":", "/").split("/")[-1]
+        if name:
+            return name
+    if not cwd:
+        return None
+    if cwd not in _PROJECTS:
+        name, p = None, cwd
+        while p and p not in ("/", HOME) and len(p) > 1:
+            if os.path.exists(os.path.join(p, ".git")):
+                parent = os.path.dirname(p)
+                name = os.path.basename(parent) if os.path.isdir(os.path.join(parent, ".bare")) else os.path.basename(p)
+                break
+            p = os.path.dirname(p)
+        _PROJECTS[cwd] = name or tilde(cwd)
+    return _PROJECTS[cwd]
+
+
+def first_text(content):
+    if isinstance(content, str):
+        return content
+    for block in content or []:
+        if isinstance(block, dict) and block.get("type") in ("text", "input_text") and block.get("text"):
+            return block["text"]
+    return None
 
 
 def tilde(path):
@@ -75,6 +146,23 @@ class Usage:
         self.cutoff = cutoff
         self.bucket = bucket
         self.rows = defaultdict(lambda: dict.fromkeys(METRICS, 0) | {"sessions": set(), "copilot_aiu": 0.0})
+        self.sessions = {}  # (tool, profile, session) -> usage counters + metadata
+
+    def session(self, tool, profile, sid):
+        return self.sessions.setdefault((tool, profile, sid), {
+            "requests": 0, "total": 0, "uncached": 0, "output": 0, "models": Counter(), "slots": set(),
+            "first": None, "last": None, "title": None, "title_src": None, "prompt": None,
+            "cwd": None, "repo": None, "branch": None})
+
+    def note(self, tool, profile, sid, **meta):
+        """Merge session metadata (title, cwd, repo, branch, prompt, slots); first non-empty value wins."""
+        if not sid:
+            return
+        s = self.session(tool, profile, sid)
+        s["slots"] |= meta.pop("slots", set())
+        for k, v in meta.items():
+            if v and not s.get(k):
+                s[k] = v
 
     def add(self, tool, profile, model, ts, session, **m):
         if ts is None or ts < self.cutoff:
@@ -89,6 +177,16 @@ class Usage:
         row["copilot_aiu"] += float(m.get("copilot_aiu") or 0)
         if session:
             row["sessions"].add(session)
+            s = self.session(tool, profile, session)
+            inp, out = int(m.get("input") or 0), int(m.get("output") or 0)
+            s["requests"] += 1
+            s["total"] += inp + out
+            s["uncached"] += max(inp - int(m.get("cached") or 0), 0) + out
+            s["output"] += out
+            s["models"][model or "unknown"] += 1
+            s["slots"].add(slot_of(ts))
+            s["first"] = min(s["first"] or ts, ts)
+            s["last"] = max(s["last"] or ts, ts)
         return True
 
 
@@ -143,10 +241,32 @@ def default_claude_dirs():
 
 
 def parse_claude_file(path):
-    """Usage records from one Claude Code transcript: (dedupe key, model, ts, session, metrics)."""
-    out, fallback = [], os.path.basename(path)[:-6]
+    """One Claude Code transcript -> (usage records, per-session metadata).
+
+    Records are (dedupe key, model, ts, session, metrics). Metadata holds the AI title, cwd,
+    branch, first real prompt (redacted), and activity slots, keyed by session id.
+    """
+    out, meta, fallback = [], {}, os.path.basename(path)[:-6]
     for e in iter_jsonl(path):
-        if e.get("type") != "assistant":
+        sid = e.get("sessionId") or fallback
+        kind = e.get("type")
+        if kind in ("ai-title", "summary", "custom-title"):
+            m = meta.setdefault(sid, {"slots": set()})
+            title = clean_title(e.get("aiTitle") or e.get("summary") or e.get("customTitle"))
+            if title:
+                m["title"], m["title_src"] = title, "ai" if kind == "ai-title" else kind
+            continue
+        if kind in ("user", "assistant"):
+            m = meta.setdefault(sid, {"slots": set()})
+            ts = parse_ts(e.get("timestamp"))
+            if ts:
+                m["slots"].add(slot_of(ts))
+            m.setdefault("cwd", e.get("cwd"))
+            if e.get("gitBranch") and e.get("gitBranch") != "HEAD":
+                m.setdefault("branch", e.get("gitBranch"))
+            if kind == "user" and not m.get("prompt") and not e.get("isMeta") and not e.get("isSidechain"):
+                m["prompt"] = clean_title(first_text((e.get("message") or {}).get("content")))
+        if kind != "assistant":
             continue
         msg = e.get("message") or {}
         u = msg.get("usage") or {}
@@ -158,7 +278,7 @@ def parse_claude_file(path):
                     e.get("sessionId") or fallback,
                     {"input": (u.get("input_tokens", 0) or 0) + cr + cw, "cached": cr, "cache_write": cw,
                      "output": u.get("output_tokens", 0)}))
-    return out
+    return out, meta
 
 
 def collect_claude(usage, dirs, status, cache=None):
@@ -176,28 +296,46 @@ def collect_claude(usage, dirs, status, cache=None):
         for path in glob.glob(os.path.join(root, "projects", "**", "*.jsonl"), recursive=True):
             if os.path.getmtime(path) < usage.cutoff.timestamp():
                 continue
-            for key, model, ts, session, m in cache.records(path, parse_claude_file):
+            records, meta = cache.records(path, parse_claude_file) or ([], {})
+            for key, model, ts, session, m in records:
                 if key is not None:
                     if key in seen:
                         continue
                     seen.add(key)
                 count += usage.add("claude-code", label, model, ts, session, **m)
+            for sid, m in meta.items():
+                if ("claude-code", label, sid) in usage.sessions:
+                    usage.note("claude-code", label, sid, **{**m, "slots": set(m.get("slots", ()))})
         status.append((name, tilde(root), "ok", count))
 
 
 def parse_codex_file(path):
-    """Usage records from one Codex rollout: (response id or None, provider, model, ts, session, metrics)."""
+    """One Codex rollout -> (usage records, metadata).
+
+    Records are (response id or None, provider, model, ts, session, metrics); metadata holds the
+    session id, cwd, repository URL, first real prompt (redacted), and activity slots.
+    """
     provider, model, session = None, None, os.path.basename(path)[:-6]
     events = list(iter_jsonl(path))
+    meta = {"slots": set()}
     has_records = any(e.get("type") == "token_usage_record" for e in events)
     prev_total, out = None, []
     for e in events:
         p = e.get("payload") if isinstance(e.get("payload"), dict) else {}
         kind = e.get("type")
+        ts = parse_ts(e.get("timestamp"))
+        if ts and kind in ("response_item", "event_msg"):
+            meta["slots"].add(slot_of(ts))
         if kind == "session_meta":
             provider = p.get("model_provider") or provider
             session = p.get("id") or session
             model = p.get("model") or model
+            meta.setdefault("cwd", p.get("cwd"))
+            git = p.get("git") if isinstance(p.get("git"), dict) else {}
+            meta.setdefault("repo", git.get("repository_url"))
+            meta.setdefault("branch", git.get("branch"))
+        elif kind == "response_item" and p.get("role") == "user" and not meta.get("prompt"):
+            meta["prompt"] = clean_title(first_text(p.get("content")))
         elif kind == "turn_context":
             model = p.get("model") or model
             provider = p.get("model_provider_id") or p.get("model_provider") or provider
@@ -227,7 +365,17 @@ def parse_codex_file(path):
                     {"input": u.get("input_tokens"), "cached": u.get("cached_input_tokens"),
                      "cache_write": u.get("cache_write_input_tokens"), "output": u.get("output_tokens"),
                      "reasoning": u.get("reasoning_output_tokens")}))
-    return out
+    meta["session"] = session
+    return out, meta
+
+
+def codex_titles(root):
+    """Thread names from Codex's session_index.jsonl (latest entry per id wins)."""
+    titles = {}
+    for e in iter_jsonl(os.path.join(root, "session_index.jsonl")):
+        if e.get("id"):
+            titles[e["id"]] = e.get("thread_name")
+    return titles
 
 
 def collect_codex(usage, root, status, cache=None):
@@ -239,16 +387,25 @@ def collect_codex(usage, root, status, cache=None):
         status.append(("codex", tilde(root), "not found", 0))
         return
     count, seen = 0, set()
+    titles = codex_titles(root) if os.path.exists(os.path.join(root, "session_index.jsonl")) else {}
     for path in files:
         if os.path.getmtime(path) < usage.cutoff.timestamp():
             continue
-        for rid, provider, model, ts, session, m in cache.records(path, parse_codex_file):
+        records, meta = cache.records(path, parse_codex_file) or ([], {})
+        profiles = set()
+        for rid, provider, model, ts, session, m in records:
             if rid is not None:
                 if rid in seen:
                     continue
                 seen.add(rid)
             prof = CODEX_PROVIDERS.get(provider or "openai", provider)
+            profiles.add((prof, session))
             count += usage.add("codex", prof, model, ts, session, **m)
+        for prof, session in profiles:
+            title = clean_title(titles.get(session) or titles.get(meta.get("session")))
+            usage.note("codex", prof, session, title=title, title_src="index" if title else None,
+                       cwd=meta.get("cwd"), repo=meta.get("repo"), branch=meta.get("branch"),
+                       prompt=meta.get("prompt"), slots=set(meta.get("slots", ())))
     status.append(("codex", tilde(root), "ok", count))
 
 
@@ -263,6 +420,13 @@ def collect_copilot(usage, db_path, status):
             "SELECT session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,"
             " reasoning_tokens, total_nano_aiu, created_at FROM assistant_usage_events WHERE created_at >= ?",
             (usage.cutoff.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),)).fetchall()
+        ids = sorted({r[0] for r in rows})
+        info = {}
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            info.update({r[0]: r[1:] for r in con.execute(
+                f"SELECT id, cwd, repository, branch, summary FROM sessions WHERE id IN ({','.join('?' * len(chunk))})",
+                chunk)})
         con.close()
     except sqlite3.Error as exc:
         status.append(("copilot", tilde(db_path), f"error: {exc}", 0))
@@ -272,6 +436,11 @@ def collect_copilot(usage, db_path, status):
         count += usage.add("copilot", "github-copilot", model, parse_ts(created), sid,
                            input=inp, cached=cr, cache_write=cw, output=out, reasoning=rsn,
                            copilot_aiu=(aiu or 0) / 1e9)
+    for sid, (cwd, repo, branch, summary) in info.items():
+        if ("copilot", "github-copilot", sid) in usage.sessions:
+            title = clean_title(summary)
+            usage.note("copilot", "github-copilot", sid, title=title, title_src="summary" if title else None,
+                       cwd=cwd, repo=repo, branch=branch)
     status.append(("copilot", tilde(db_path), "ok", count))
 
 
@@ -289,6 +458,28 @@ def collect_proxy(usage, log_path, status):
                            input=e.get("input_tokens"), cached=e.get("cached_tokens"),
                            output=e.get("output_tokens"), reasoning=e.get("reasoning_tokens"))
     status.append(("foundry-proxy", tilde(log_path), "ok", count))
+
+
+def session_rows(usage):
+    """Flat per-session rows (sessions with usage in the window), newest activity first."""
+    out = []
+    for (tool, profile, sid), s in usage.sessions.items():
+        if not s["requests"]:
+            continue
+        title, src = s["title"], s["title_src"]
+        if not title and s["prompt"]:
+            title, src = s["prompt"], "prompt"
+        out.append({
+            "tool": tool, "profile": profile, "id": sid, "title": title, "title_src": src,
+            "project": project_of(s["cwd"], s["repo"]), "path": tilde(s["cwd"]) if s["cwd"] else None,
+            "repo": s["repo"], "branch": s["branch"],
+            "first": s["first"].isoformat(timespec="seconds"), "last": s["last"].isoformat(timespec="seconds"),
+            "active_min": len({x for x in s["slots"] if x is not None}) * SLOT_MINUTES,
+            "requests": s["requests"], "total": s["total"], "uncached": s["uncached"], "output": s["output"],
+            "model": s["models"].most_common(1)[0][0] if s["models"] else None,
+        })
+    out.sort(key=lambda r: r["last"], reverse=True)
+    return out
 
 
 def rollup(rows, keyfn):
