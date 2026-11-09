@@ -1,0 +1,249 @@
+{{define "page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Token usage</title>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body data-etag="{{.ETag}}" data-interval="{{.D.Interval}}" data-generated="{{.D.Generated.UnixMilli}}">
+  <div class="shell">
+    <aside class="sidebar" aria-label="Sections">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">◆</span> ai-usage</div>
+      <nav>
+        <a href="#overview" class="nav-item">Overview</a>
+        <a href="#top-sessions" class="nav-item">Top sessions</a>
+        <a href="#breakdown" class="nav-item">Breakdown</a>
+        <a href="#rhythm" class="nav-item">When you work</a>
+        <a href="#mix" class="nav-item">Token mix</a>
+        <a href="#profiles" class="nav-item">Profiles</a>
+        <a href="#work" class="nav-item">Work</a>
+        <a href="#models" class="nav-item">Models</a>
+        <a href="#sources" class="nav-item">Sources</a>
+      </nav>
+      <div class="sidebar-foot">{{range .D.Foot}}<div>{{.}}</div>{{end}}</div>
+    </aside>
+    <main id="main">{{template "main" .}}</main>
+  </div>
+  <div class="tip" id="tip" role="tooltip" hidden></div>
+</body>
+</html>{{end}}
+
+{{define "main"}}{{$d := .D}}{{$f := $d.Filters}}
+<header class="page-head">
+  <div>
+    <h1>Token usage</h1>
+    <p class="sub">{{$d.Subtitle}}</p>
+  </div>
+  <div class="head-actions">
+    <span class="live ok" id="live"><span class="dot" aria-hidden="true"></span><span id="live-text">live</span></span>
+    <button type="button" class="btn" id="theme" aria-label="Toggle color theme">◐</button>
+    <button type="button" class="btn" id="refresh">↻ Refresh now</button>
+  </div>
+</header>
+
+<nav class="tabs" aria-label="Tool">
+  {{range .Tabs}}<a class="tab" href="{{$f.Link "tab" .ID}}" {{if eq .ID $f.Tab}}aria-current="page"{{end}}>{{.Label}} <span class="count">{{index $d.TabCounts .ID}}</span></a>{{end}}
+</nav>
+
+<div class="controls">
+  <div class="seg" role="group" aria-label="Metric">{{range .Metrics}}<a href="{{$f.Link "metric" .ID}}" {{if eq .ID $f.Metric}}aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>
+  <span class="ctl-label">Burn rate</span>
+  <div class="seg" role="group" aria-label="Burn rate window">{{range .Burns}}<a href="{{$f.Link "burn" .ID}}" {{if eq .ID $f.Burn}}aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>
+  <span class="ctl-label">Range</span>
+  <div class="seg" role="group" aria-label="Range">{{range .Ranges}}<a href="{{$f.Link "range" .ID}}" {{if eq .ID $f.Range}}aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>
+</div>
+
+<div id="notice" class="notice" hidden></div>
+{{if .Pending}}<div class="notice">Collecting usage for the first time… this page refreshes when it's ready.</div>{{end}}
+
+<section class="card" id="overview" aria-labelledby="hero-title">
+  <div class="hero">
+    <div class="hero-main">
+      <div class="hero-title" id="hero-title">{{$d.Hero.Title}}</div>
+      <div class="hero-number" title="{{exact $d.Hero.Value}}">{{compact $d.Hero.Value}}<span class="hero-unit">{{$d.Hero.Unit}}</span></div>
+    </div>
+    <dl class="hero-stats">{{range $d.Hero.Stats}}<div><dt>{{.Label}}</dt><dd>{{.Value}}</dd></div>{{end}}</dl>
+  </div>
+  <div class="chart-wrap">{{cumulative $d.Cum}}</div>
+  <p class="chart-desc">{{$d.Cum.Desc}}</p>
+  <div class="chart-key">
+    <span><span class="key-line" aria-hidden="true"></span>Recorded</span>
+    <span><span class="key-line dashed" aria-hidden="true"></span>Projected (7-day average rate)</span>
+    {{if gt $d.Cum.Budget 0.0}}<span><span class="key-line dotted" aria-hidden="true"></span>Budget</span>{{end}}
+    <span class="muted">Cumulative {{$d.Cum.Unit}}, {{if gt $d.Cum.Budget 0.0}}budget period{{else}}this month{{end}}</span>
+  </div>
+</section>
+
+<section class="card" id="top-sessions" aria-labelledby="top-title">
+  <div class="card-head"><h2 id="top-title">Where the tokens went</h2><span class="muted">{{$d.TopSub}}</span></div>
+  {{if $d.Top}}<ol class="top-list">{{range $i, $x := $d.Top}}
+    <li>
+      <span class="rank">{{add $i 1}}</span>
+      <div class="top-main">
+        <a class="top-title" href="/session?key={{$x.Key.String}}">{{if $x.Title}}{{$x.Title}}{{else}}<span class="muted">(untitled)</span>{{end}}</a>
+        <span class="basis">{{swatch $x.Group.Slot}}{{$x.Group.Label}} · {{or $x.Project "—"}}{{if $x.Branch}} · ⎇ {{$x.Branch}}{{end}} · {{dur $x.ActiveMin}} active</span>
+      </div>
+      <div class="top-val"><b title="{{exact $x.Value}}">{{compact $x.Value}}</b><span class="muted">{{pct $x.Share}}</span>{{share $x.Share}}</div>
+    </li>{{end}}
+  </ol>{{else}}<p class="empty">No sessions in this tab and range.</p>{{end}}
+</section>
+
+<section class="card" id="breakdown" aria-labelledby="bars-title">
+  <div class="card-head"><h2 id="bars-title">Usage by profile</h2><span class="muted">{{$d.Stack.Sub}}</span></div>
+  <div class="legend">{{range $d.Stack.Series}}<span>{{swatch .Group.Slot}}{{.Group.Label}} <b>{{compact .Total}}</b></span>{{else}}<span class="muted">No usage in range</span>{{end}}</div>
+  <div class="chart-wrap">{{stacked $d.Stack}}</div>
+  <details class="table-view">
+    <summary>Show as table</summary>
+    <div class="table-scroll"><table>
+      <thead><tr><th class="left">Bucket start</th>{{range $d.Stack.Series}}<th>{{.Group.Label}}</th>{{end}}<th>Total</th></tr></thead>
+      <tbody>{{range $i := revIdx $d.Stack.N}}{{if gt (index $d.Stack.Totals $i) 0.0}}<tr><td class="left">{{$d.Stack.BucketTitle $i}}</td>{{range $d.Stack.Series}}<td>{{exact (index .Values $i)}}</td>{{end}}<td>{{exact (index $d.Stack.Totals $i)}}</td></tr>{{end}}{{end}}</tbody>
+    </table></div>
+  </details>
+</section>
+
+<div class="split">
+  <section class="card" id="rhythm" aria-labelledby="heat-title">
+    <div class="card-head"><h2 id="heat-title">When you work</h2><span class="muted">{{$d.Metric.Unit}} by weekday and hour · last {{$d.Heat.Days}} days</span></div>
+    <div class="chart-wrap">{{heatmap $d.Heat}}</div>
+    <div class="ramp-key"><span class="muted">Less</span>{{range ramp}}<span class="ramp q{{.}}" aria-hidden="true"></span>{{end}}<span class="muted">More</span><span class="muted peak">{{$d.Heat.Peak}}</span></div>
+  </section>
+
+  <section class="card" id="mix" aria-labelledby="mix-title">
+    <div class="card-head"><h2 id="mix-title">Token mix</h2><span class="muted">cache reads vs fresh input vs output · last {{$d.Range.Label}}</span></div>
+    <div class="legend"><span><span class="swatch mix0" aria-hidden="true"></span>Cache read</span><span><span class="swatch mix1" aria-hidden="true"></span>Fresh input</span><span><span class="swatch mix2" aria-hidden="true"></span>Output</span></div>
+    {{if $d.Mix}}<div class="mix-rows">
+      {{with $d.MixAll}}<div class="mix-row all"><div class="mix-name"><b>{{.Group.Label}}</b><span class="muted">{{pct .CacheHit}} cache hit · {{compact .Total}}</span></div>{{mixbar .}}</div>{{end}}
+      {{range $d.Mix}}<div class="mix-row"><div class="mix-name">{{swatch .Group.Slot}}{{.Group.Label}}<span class="muted">{{pct .CacheHit}} cache hit · {{compact .Total}}</span></div>{{mixbar .}}</div>{{end}}
+    </div>
+    <p class="muted small">Cache reads are billed far below fresh input, so a high cache-hit rate means long sessions are reusing context cheaply. Output includes reasoning.</p>
+    {{else}}<p class="empty">No usage in range.</p>{{end}}
+  </section>
+</div>
+
+<section id="profiles" aria-labelledby="profiles-title">
+  <h2 class="section-title" id="profiles-title">Profiles</h2>
+  <div class="grid">{{range $d.Cards}}
+    <article class="card group-card">
+      <div class="name">{{swatch .Group.Slot}}{{.Group.Label}}</div>
+      <div class="big" title="{{exact .Total}}">{{compact .Total}}</div>
+      <dl class="facts">
+        <div><dt>Requests</dt><dd>{{compact .Requests}}</dd></div>
+        <div><dt>Burn {{$d.Burn.Label}}</dt><dd>{{compact .Burn}}/h</dd></div>
+        <div><dt>Share</dt><dd>{{pct .Share}}</dd></div>
+      </dl>
+      {{if .Spark}}{{spark .Spark .Group.Slot}}{{else}}<div class="empty">No usage in the last {{$d.Range.Label}}</div>{{end}}
+      <div class="models">{{range $i, $m := .TopModels}}{{if $i}} · {{end}}<b>{{$m.Name}}</b> {{compact $m.Value}}{{end}}</div>
+      {{with .Budget}}<div class="budget">
+        <div>{{.Period}} budget · {{compact .Used}} of {{compact .Tokens}} {{.Metric}} ({{pct (div .Used .Tokens)}})</div>
+        {{meter .Pct .Level}}
+        <div><span class="status {{.Level}}"><span aria-hidden="true">{{.Level.Icon}}</span>{{.Status}}</span> · projected {{compact .Projected}} by {{shortday .End}}</div>
+      </div>{{end}}
+    </article>{{else}}<div class="empty">No usage for this tab yet.</div>{{end}}
+  </div>
+</section>
+
+<section id="work" aria-labelledby="work-title">
+  <h2 class="section-title" id="work-title">Work</h2>
+  {{template "ownership" $d}}
+  {{template "workstreams" $d}}
+  <div class="card">
+    <div class="card-head"><h2 id="projects-title">Projects{{if $f.Own}} · {{$f.Own}}{{end}}</h2><span class="muted">{{$d.Metric.Unit}} by project · last {{$d.Range.Label}} · active time = 5-minute slots with activity</span></div>
+    <div class="legend">{{range usedGroups $d.Projects}}<span>{{swatch .Slot}}{{.Label}}</span>{{end}}</div>
+    <div class="chart-wrap">{{projects $d.Projects $d.Metric.Unit}}</div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <h2 id="sessions-title">Sessions{{if $f.Own}} · {{$f.Own}}{{end}}</h2>
+      <div class="ledger-tools">
+        <input type="search" id="session-filter" value="{{$f.Query}}" placeholder="Filter by title, project, branch…" aria-label="Filter sessions">
+        <div class="seg" role="group" aria-label="Sort sessions">{{range .Sorts}}<a href="{{$f.Link "sort" .ID}}#work" {{if eq .ID $f.Sort}}aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>
+      </div>
+    </div>
+    <div class="table-scroll tall"><table id="sessions-table">
+      <thead><tr><th class="left">Last active</th><th class="left">Session</th><th class="left">Project</th><th class="left">Profile</th>{{if $d.Work.Available}}<th class="left">Workstream</th>{{end}}<th>Active</th><th>{{$d.Metric.Label}}</th></tr></thead>
+      <tbody>{{range $d.Sessions}}<tr data-search="{{.SearchKey}}">
+        <td class="left nowrap">{{when .Last}}</td>
+        <td class="title"><a href="/session?key={{.Key.String}}">{{if .Title}}{{.Title}}{{else}}<span class="muted">(untitled)</span>{{end}}</a>{{if .SrcLabel}}<span class="src">{{.SrcLabel}}</span>{{end}}<span class="basis">{{join .Basis (branch .Branch) .Model}}</span></td>
+        <td class="left wrap" title="{{.Path}}">{{or .Project "—"}}{{if .Class}}<span class="basis">{{join .Class .Owner}}</span>{{end}}</td>
+        <td class="left"><span class="chip">{{swatch .Group.Slot}}{{.Group.Label}}</span></td>
+        {{if $d.Work.Available}}<td class="left wrap">{{or .Workstrm "—"}}</td>{{end}}
+        <td>{{dur .ActiveMin}}</td>
+        <td title="{{exact .Value}}">{{compact .Value}}</td>
+      </tr>{{else}}<tr><td colspan="7" class="empty">No sessions match.</td></tr>{{end}}</tbody>
+    </table></div>
+    <p class="muted small">{{exacti $d.SessionN}} sessions in the last {{$d.Range.Label}}{{if gt $d.SessionN 150}}, showing 150{{end}}. Titles come from each tool (Claude AI titles, Copilot summaries, Codex thread names), else the first prompt; secrets are redacted. Click a session for its prompts, files, and commands.</p>
+  </div>
+</section>
+
+<section class="card" id="models" aria-labelledby="models-title">
+  <div class="card-head"><h2 id="models-title">Models</h2><span class="muted">last {{$d.Range.Label}} · {{len $d.Models}} profile/model pairs</span></div>
+  <div class="table-scroll"><table>
+    <thead><tr><th class="left">Profile</th><th class="left">Model</th><th>Requests</th><th>Input</th><th>Cached</th><th>Output</th><th>Reasoning</th><th>Total</th></tr></thead>
+    <tbody>{{range $d.Models}}<tr><td class="left"><span class="chip">{{swatch .Group.Slot}}{{.Group.Label}}</span></td><td class="left">{{.Model}}</td>
+      <td title="{{exacti .Requests}}">{{compacti .Requests}}</td><td title="{{exacti .Input}}">{{compacti .Input}}</td><td title="{{exacti .Cached}}">{{compacti .Cached}}</td>
+      <td title="{{exacti .Output}}">{{compacti .Output}}</td><td title="{{exacti .Reasoning}}">{{compacti .Reasoning}}</td><td title="{{exacti .Total}}">{{compacti .Total}}</td></tr>
+    {{else}}<tr><td colspan="8" class="empty">No usage in range.</td></tr>{{end}}</tbody>
+  </table></div>
+</section>
+
+<section class="card" id="sources" aria-labelledby="sources-title">
+  <div class="card-head"><h2 id="sources-title">Sources</h2><span class="muted">{{$d.Sources.Sub}}</span></div>
+  <div class="table-scroll"><table>
+    <thead><tr><th class="left">Source</th><th class="left">Status</th><th>Requests ({{.Days}}d)</th><th class="left">Path</th></tr></thead>
+    <tbody>{{range $d.Sources.Status}}<tr><td class="left">{{.Source}}</td><td class="left"><span class="status {{.Level}}"><span aria-hidden="true">{{.Level.Icon}}</span>{{.Label}}</span></td><td>{{exacti .Requests}}</td><td class="left muted">{{.Path}}</td></tr>{{end}}</tbody>
+  </table></div>
+  {{if hasCross $d.Sources.Daily}}
+  <h3 class="sub-head">Proxy cross-check</h3>
+  <div class="legend"><span>{{swatch 0}}foundry-entra-proxy</span><span>{{swatch 5}}Codex · Foundry</span></div>
+  <div class="chart-wrap">{{crosscheck $d.Sources.Daily}}</div>
+  {{end}}
+  {{range $d.Sources.Notes}}<p class="muted">{{.}}</p>{{end}}
+  {{range $d.Sources.Warnings}}<p class="status warning"><span aria-hidden="true">!</span>{{.}}</p>{{end}}
+</section>
+{{end}}
+
+{{define "ownership"}}{{$o := .Ownership}}{{$f := .Filters}}
+<div class="card" id="ownership" aria-labelledby="ownership-title">
+  <div class="card-head">
+    <h2 id="ownership-title">Ownership</h2>
+    <div class="seg" role="group" aria-label="Show projects and sessions for">
+      <a href="{{$f.Link "own" ""}}#work" {{if not $f.Own}}aria-current="true"{{end}}>All</a>
+      {{range $o.Rows}}<a href="{{$f.Link "own" .Label}}#work" {{if eq .Label $f.Own}}aria-current="true"{{end}}>{{.Label}}</a>{{end}}
+    </div>
+  </div>
+  {{if gt $o.Total 0.0}}<div class="table-scroll"><table>
+    <thead><tr><th class="left">Label</th><th class="left">Share</th><th>{{.Metric.Label}}</th><th>Sessions</th><th>Projects</th><th>Active</th></tr></thead>
+    <tbody>{{range $o.Rows}}<tr{{if eq .Label $f.Own}} class="selected"{{end}}>
+      <td class="left"><a href="{{$f.Link "own" .Label}}#work">{{.Label}}</a>{{if eq .Label $o.Default}}<span class="basis">default</span>{{end}}</td>
+      <td class="left">{{pct .Share}}{{share .Share}}</td>
+      <td title="{{exact .Value}}">{{compact .Value}}</td>
+      <td>{{exacti .Sessions}}</td><td>{{exacti .Projects}}</td><td>{{dur .Active}}</td>
+    </tr>{{end}}</tbody>
+  </table></div>{{else}}<p class="empty">No sessions in this tab and range.</p>{{end}}
+  <p class="muted small">Rules: {{$o.Source}}. Each session's owner is the GitHub user or org in its repository's remote. {{if $o.Auto}}Add ~/.config/ai-usage/projects.yaml (see projects.example.yaml) to name your own labels.{{end}} Totals come from sessions, so they cover this Work section; the hourly charts above aren't split by repository.</p>
+  {{if $o.Warning}}<p class="status warning"><span aria-hidden="true">!</span>{{$o.Warning}}</p>{{end}}
+</div>
+{{end}}
+
+{{define "workstreams"}}{{$w := .Work}}
+<div class="card" id="workstreams">
+  <div class="card-head"><h2>Workstreams</h2><span class="muted">{{if $w.Available}}ai-work-report · classified {{if $w.Classified}}{{dayStr $w.Classified}}{{else}}—{{end}} · {{$w.Matched}} of {{$w.InRange}} sessions in range matched{{else}}from the ai-work-report skill{{end}}</span></div>
+  {{if $w.Available}}
+    {{if $w.Title}}<div class="narrative"><h3>{{$w.Title}}</h3>{{if $w.Thesis}}<p>{{$w.Thesis}}</p>{{end}}</div>{{end}}
+    {{if $w.Themes}}<div class="table-scroll"><table>
+      <thead><tr><th class="left">Workstream</th><th>Sessions</th><th>{{.Metric.Label}}</th><th>Share</th><th>AI active</th><th>Est. manual</th><th>Est. saved</th></tr></thead>
+      <tbody>{{range $w.Themes}}<tr><td class="title">{{.Name}}{{if .Desc}}<span class="basis">{{.Desc}}</span>{{end}}</td><td>{{.Sessions}}</td><td>{{compact .Value}}</td><td>{{pct (div .Value $w.Total)}}</td><td>{{dur .Active}}</td><td>{{printf "%.1fh" .Manual}}</td><td>{{printf "%.1fh" .Saved}}</td></tr>{{end}}</tbody>
+    </table></div>{{else}}<p class="muted">No sessions in this tab and range match the last classification. Try the 30d range or rerun the skill.</p>{{end}}
+    <p class="muted small">Manual hours are the skill's estimates (capped at 16h per session); saved = manual − AI active time × 1.5, as in the skill's build.py. Estimates, not measurements.</p>
+    {{if $w.ReportTime}}<p><a class="link-btn" href="/report" target="_blank" rel="noopener">Open full report ↗ ({{dayStr $w.ReportTime}})</a></p>{{end}}
+  {{else}}
+    <p class="muted">Run the ai-work-report skill whenever you want themes, estimated hours saved, and a narrative. Point its workdir and output here and this card picks them up on the next refresh:</p>
+    <pre class="cmd">workdir: {{$w.Dir}}
+build:   python3 scripts/build.py {{$w.Dir}} --days 30 --out {{$w.Dir}}/ai-work-report.html</pre>
+  {{end}}
+  {{if $w.Error}}<p class="status warning"><span aria-hidden="true">!</span>{{$w.Error}}</p>{{end}}
+</div>
+{{end}}

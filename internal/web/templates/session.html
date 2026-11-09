@@ -1,0 +1,50 @@
+{{define "session"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Session detail</title>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <main class="detail-page">{{$s := .S}}{{$g := .Group}}
+    <p><a href="/{{.Back}}">← Back to dashboard</a></p>
+    <header class="page-head">
+      <div>
+        <h1>{{if $s.Title}}{{$s.Title}}{{else}}(untitled session){{end}}</h1>
+        <p class="sub"><span class="chip">{{swatch $g.Slot}}{{$g.Label}}</span> · {{or $s.Project "—"}}{{if $s.Branch}} · ⎇ {{$s.Branch}}{{end}}{{if $s.Path}} · <span class="muted">{{$s.Path}}</span>{{end}}</p>
+      </div>
+      <button type="button" class="btn" id="theme" aria-label="Toggle color theme">◐</button>
+    </header>
+    <section class="card">
+      <dl class="hero-stats">
+        <div><dt>Total tokens</dt><dd title="{{exacti $s.Total}}">{{compacti $s.Total}}</dd></div>
+        <div><dt>Uncached</dt><dd title="{{exacti $s.Uncached}}">{{compacti $s.Uncached}}</dd></div>
+        <div><dt>Output</dt><dd title="{{exacti $s.Output}}">{{compacti $s.Output}}</dd></div>
+        <div><dt>Requests</dt><dd>{{exacti $s.Requests}}</dd></div>
+        <div><dt>Active time</dt><dd>{{dur $s.ActiveMin}}</dd></div>
+        <div><dt>First → last</dt><dd>{{whenStr $s.First}} → {{whenStr $s.Last}}</dd></div>
+      </dl>
+    </section>
+    {{with $s.Detail}}
+    <div class="split">
+      <section class="card"><div class="card-head"><h2>Prompts</h2><span class="muted">first {{len .Prompts}}, redacted</span></div>
+        {{if .Prompts}}<ol class="prompt-list">{{range .Prompts}}<li>{{.}}</li>{{end}}</ol>{{else}}<p class="empty">No prompts recorded.</p>{{end}}</section>
+      <section class="card"><div class="card-head"><h2>Commands</h2><span class="muted">shell commands or their descriptions</span></div>
+        {{if .Commands}}<ul class="cmd-list">{{range .Commands}}<li><code>{{.}}</code></li>{{end}}</ul>{{else}}<p class="empty">No commands recorded.</p>{{end}}</section>
+    </div>
+    <div class="split">
+      <section class="card"><div class="card-head"><h2>Files changed</h2><span class="muted">{{.FilesTotal}} files{{if gt .FilesTotal (len .Files)}}, top {{len .Files}}{{end}}</span></div>
+        {{countBars .Files "edits"}}</section>
+      <section class="card"><div class="card-head"><h2>Tools</h2><span class="muted">calls by tool</span></div>
+        {{countBars .Tools "calls"}}
+        {{if .Models}}<h3 class="sub-head">Models</h3>{{countBars .Models "requests"}}{{end}}
+        {{if .Refs}}<h3 class="sub-head">References</h3><ul class="cmd-list">{{range .Refs}}<li>{{.}}</li>{{end}}</ul>{{end}}</section>
+    </div>
+    {{else}}<section class="card"><p class="empty">No detail stored for this session yet. Details are captured on the next collection while its transcript still exists.</p></section>{{end}}
+  </main>
+  <div class="tip" id="tip" role="tooltip" hidden></div>
+</body>
+</html>{{end}}
