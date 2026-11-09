@@ -14,26 +14,27 @@ Entra tokens come from `az account get-access-token`; there is no Azure SDK and 
 
 ## Install (macOS LaunchAgent)
 
-`install.sh` builds the binary into `~/.local/bin`, creates the client key if it is missing, and
-runs the proxy as the per-user LaunchAgent `dev.hacker1db.foundry-entra-proxy`:
+`scripts/install-proxy.sh` builds the binary into `~/.local/bin`, creates the client key if it is
+missing, and runs the proxy as the per-user LaunchAgent `<your-username>.foundry-entra-proxy` (any
+character launchd doesn't allow in a label becomes `-`). It retires any other
+`*.foundry-entra-proxy` agent, such as one installed under an earlier label:
 
 ```zsh
-cd foundry-entra-proxy
-./install.sh                               # resource from ANTHROPIC_FOUNDRY_RESOURCE, or --resource <name>
-./install.sh --deployments gpt-6-luna,gpt-6.1-sol,gpt-6-astra   # default allowlist shown
-./install.sh --check                       # binary, key, agent, /healthz, /readyz
-./install.sh --uninstall                   # unload the agent (keeps binary, key, logs)
+scripts/install-proxy.sh                   # resource from ANTHROPIC_FOUNDRY_RESOURCE, or --resource <name>
+scripts/install-proxy.sh --deployments gpt-6-luna,gpt-6.1-sol,gpt-6-astra   # default allowlist shown
+scripts/install-proxy.sh --check           # binary, key, agent, /healthz, /readyz
+scripts/install-proxy.sh --uninstall       # unload the agent (keeps binary, key, logs)
 ```
 
 The agent sets `FEP_UPSTREAM_BASE=https://<resource>.services.ai.azure.com`, `FEP_AZ_PATH`, and a
 minimal `PATH`, restarts on crash (`KeepAlive`), and logs to
-`~/Library/Logs/foundry-entra-proxy/proxy.log`. Rerun `install.sh` after pulling changes. It needs a
+`~/Library/Logs/foundry-entra-proxy/proxy.log`. Rerun `scripts/install-proxy.sh` after pulling changes. It needs a
 working `az login`; `/readyz` reports `az_login_required` until then.
 
 ### Build only
 
 ```zsh
-go build -ldflags "-X main.version=$(git rev-parse --short HEAD)" -o ~/.local/bin/foundry-entra-proxy .
+go build -ldflags "-X main.version=$(git rev-parse --short HEAD)" -o ~/.local/bin/foundry-entra-proxy ./cmd/foundry-entra-proxy
 ```
 
 ## Configuration
@@ -152,9 +153,8 @@ can be told apart from Foundry's own responses:
 ## Development
 
 ```zsh
-go vet ./...
-go test -race ./...
-go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./... | grep -v '^foundry-entra-proxy'
+make check   # gofmt, go vet, go test -race, and the stdlib-only rule for the whole module
 ```
 
-The last command prints nothing while the module uses only the standard library.
+The code lives in `cmd/foundry-entra-proxy` and `internal/fep/`. Request log lines follow the
+`internal/proxylog` contract, which `ai-usage` reads back; a test pins the round trip.

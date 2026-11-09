@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Build foundry-entra-proxy and run it as a per-user LaunchAgent on macOS.
 #
-#   ./install.sh                     # build, create the client key if missing, (re)load the agent
-#   ./install.sh --check             # report binary, key, agent, and /healthz + /readyz state
-#   ./install.sh --uninstall         # unload the agent and remove its plist (keeps binary, key, logs)
+#   scripts/install-proxy.sh               # build, create the client key if missing, (re)load the agent
+#   scripts/install-proxy.sh --check       # report binary, key, agent, and /healthz + /readyz state
+#   scripts/install-proxy.sh --uninstall   # unload the agent and remove its plist (keeps binary, key, logs)
+#
+# The agent is labeled <your-username>.foundry-entra-proxy.
 #
 # Settings (flag, then environment, then default):
 #   --resource    FEP_RESOURCE, ANTHROPIC_FOUNDRY_RESOURCE   Foundry resource name (required)
@@ -12,8 +14,12 @@
 #   --listen      FEP_LISTEN                                  default: 127.0.0.1:8787
 set -euo pipefail
 
-label="dev.hacker1db.foundry-entra-proxy"
-src_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo="$(cd "$here/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR
+source "$here/launchd.sh"
+service="foundry-entra-proxy"
+label="$(agent_label "$service")"
 bin_path="$HOME/.local/bin/foundry-entra-proxy"
 key_dir="$HOME/.config/foundry-entra-proxy"
 key_file="$key_dir/client.key"
@@ -37,7 +43,7 @@ while [[ $# -gt 0 ]]; do
         --listen) listen="${2:?}"; shift 2 ;;
         --check) mode=check; shift ;;
         --uninstall) mode=uninstall; shift ;;
-        -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
@@ -88,8 +94,8 @@ command -v go >/dev/null || die "go is not installed"
 az_path="$(command -v az)" || die "az is not installed"
 
 mkdir -p "$(dirname "$bin_path")" "$log_dir" "$(dirname "$plist")"
-version="$(git -C "$src_dir" rev-parse --short HEAD 2>/dev/null || echo dev)"
-(cd "$src_dir" && go build -trimpath -ldflags "-X main.version=$version" -o "$bin_path" .)
+version="$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo dev)"
+(cd "$repo" && go build -trimpath -ldflags "-X main.version=$version" -o "$bin_path" ./cmd/foundry-entra-proxy)
 echo "Built $bin_path ($version)"
 
 if [[ ! -f "$key_file" ]]; then
@@ -100,7 +106,9 @@ if [[ ! -f "$key_file" ]]; then
 fi
 chmod 600 "$key_file"
 
-# Values were validated above, so none of them need XML escaping.
+retire_other_agents "$service" "$label"
+
+# Values were validated above; the label and paths are escaped because they come from the account.
 tenant_xml=""
 [[ -z "$tenant" ]] || tenant_xml="<key>FEP_TENANT</key><string>$tenant</string>"
 cat > "$plist.tmp" <<EOF
@@ -108,24 +116,24 @@ cat > "$plist.tmp" <<EOF
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key><string>$label</string>
-    <key>ProgramArguments</key><array><string>$bin_path</string></array>
+    <key>Label</key><string>$(xml_escape "$label")</string>
+    <key>ProgramArguments</key><array><string>$(xml_escape "$bin_path")</string></array>
     <key>EnvironmentVariables</key>
     <dict>
         <key>FEP_UPSTREAM_BASE</key><string>https://$resource.services.ai.azure.com</string>
-        <key>FEP_CLIENT_KEY_FILE</key><string>$key_file</string>
+        <key>FEP_CLIENT_KEY_FILE</key><string>$(xml_escape "$key_file")</string>
         <key>FEP_ALLOWED_DEPLOYMENTS</key><string>$deployments</string>
         <key>FEP_LISTEN</key><string>$listen</string>
-        <key>FEP_AZ_PATH</key><string>$az_path</string>
-        <key>PATH</key><string>$(dirname "$az_path"):/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>FEP_AZ_PATH</key><string>$(xml_escape "$az_path")</string>
+        <key>PATH</key><string>$(xml_escape "$(dirname "$az_path")"):/usr/bin:/bin:/usr/sbin:/sbin</string>
         $tenant_xml
     </dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
     <key>ThrottleInterval</key><integer>30</integer>
     <key>ProcessType</key><string>Background</string>
-    <key>StandardOutPath</key><string>$log_dir/proxy.log</string>
-    <key>StandardErrorPath</key><string>$log_dir/proxy.log</string>
+    <key>StandardOutPath</key><string>$(xml_escape "$log_dir/proxy.log")</string>
+    <key>StandardErrorPath</key><string>$(xml_escape "$log_dir/proxy.log")</string>
 </dict>
 </plist>
 EOF
