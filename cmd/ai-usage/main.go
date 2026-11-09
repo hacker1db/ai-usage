@@ -48,7 +48,7 @@ func usageExit(code int) {
 	fmt.Fprint(os.Stderr, `usage: ai-usage <command> [flags]
 
 commands:
-  serve    live web dashboard on a loopback address (default http://127.0.0.1:8790)
+  serve    live web dashboard on a loopback address (default http://127.0.0.1:8790); opens the browser, -open=false to skip
   tui      live terminal dashboard; reads a running dashboard, else collects locally
   report   write reports/<today>/{report.md,usage.json,usage.csv}
   version  print the version
