@@ -1,7 +1,7 @@
 VERSION := $(shell git describe --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
-.PHONY: build test check run tui report install install-proxy
+.PHONY: build test check run tui report install-proxy
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/ai-usage ./cmd/ai-usage
@@ -26,9 +26,6 @@ tui: build
 
 report: build
 	./bin/ai-usage report -print
-
-install:
-	scripts/install-dashboard.sh
 
 install-proxy:
 	scripts/install-proxy.sh

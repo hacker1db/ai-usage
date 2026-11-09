@@ -20,7 +20,6 @@ make check                     # gofmt, vet, race tests, JS syntax check, stdlib
 bin/ai-usage serve             # web dashboard in the foreground
 bin/ai-usage tui               # terminal dashboard (reads the running dashboard, else collects locally)
 bin/ai-usage report -days 7 -print
-scripts/install-dashboard.sh   # run the dashboard as a LaunchAgent (see below)
 ```
 
 ## What it tracks
@@ -112,6 +111,7 @@ labels:
   personal:
     paths: [~/Developer/sites]
 ```
+
 The same file defines the dashboard's **profile filters**. Each entry names a group of
 `tool:profile` series (or a bare profile name, matching any tool), with `*` globs, up to 12:
 
@@ -127,25 +127,11 @@ profiles:
 A broken `profiles:` section only drops the profile filters (with a warning on the dashboard).
 The ownership rules still apply.
 
-
 The file is a YAML subset, parsed without a dependency: mappings, `- item` and `[a, b]` lists,
 quoted strings, and comments. Anything else (anchors, `{}` maps, `|` blocks) is an error with a
 line number. A broken file falls back to the built-in rule and shows the error on the dashboard.
 Ownership totals come from sessions, so they cover the Work section; the hourly charts above it
 aren't split by repository.
-
-### Run it in the background (macOS)
-
-```zsh
-scripts/install-dashboard.sh             # build ~/.local/bin/ai-usage and (re)load the agent
-scripts/install-dashboard.sh --check     # agent state + /healthz
-scripts/install-dashboard.sh --uninstall
-```
-
-The LaunchAgent is labeled `<your-username>.ai-usage-dashboard`, using the account that runs the
-installer, with characters launchd doesn't allow replaced by `-`. Installing retires any other
-`*.ai-usage-dashboard` agent, such as the earlier Python one. The agent runs the installed binary,
-so moving or re-cloning this checkout doesn't break it. Logs go to `~/Library/Logs/ai-usage/dashboard.log`.
 
 ### Files
 
@@ -157,8 +143,8 @@ so moving or re-cloning this checkout doesn't break it. Logs go to `~/Library/Lo
 | `~/.config/ai-usage/projects.yaml` | Optional ownership exceptions ([example](projects.example.yaml)) | `-projects`, `$AI_USAGE_PROJECTS` |
 | `~/.local/share/ai-usage/owners.json` | Cached GitHub user/org answers | `-data-dir` |
 
-The installer copies an existing `<checkout>/data/hourly.json`, `data/work-report/`, and
-`dashboard.json` into those places once. The history format is unchanged from the Python version.
+The history format is unchanged from the Python version, so an existing `hourly.json` can be
+copied into the data dir as is.
 
 - **History store:** every collection merges into `hourly.json`, so usage survives Claude Code's
   transcript cleanup (`cleanupPeriodDays`) and deleted Codex rollouts. A past hour only grows: a

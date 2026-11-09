@@ -4,7 +4,7 @@
 # Labels are "<user>.<service>", where <user> is the account running the installer with any
 # character launchd labels don't allow replaced by "-" (jdoe@example.com -> jdoe-example.com).
 
-# agent_label SERVICE -> prints the per-user label, e.g. jdoe.ai-usage-dashboard
+# agent_label SERVICE -> prints the per-user label, e.g. jdoe.foundry-entra-proxy
 agent_label() {
     local user
     user="$(id -un)"

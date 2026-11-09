@@ -147,7 +147,7 @@ async function poll() {
     if (n) n.hidden = true;
   } catch {
     const n = $("notice");
-    if (n) { n.hidden = false; n.textContent = "Can't reach the dashboard server. Is the ai-usage LaunchAgent running?"; }
+    if (n) { n.hidden = false; n.textContent = "Can't reach the dashboard server. Is 'ai-usage serve' still running?"; }
   }
   tick();
 }
