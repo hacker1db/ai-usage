@@ -1,0 +1,26 @@
+# ai-usage ownership rules. Copy to ~/.config/ai-usage/projects.yaml (or set $AI_USAGE_PROJECTS,
+# or pass -projects). Edits apply on the next refresh; no restart needed.
+#
+# Without this file, repositories owned by an account gh is logged in to are "personal" and
+# everything else is "work".
+#
+# A session's owner is the GitHub user or org (or Azure DevOps organization) in its repository's
+# remote URL, read from the repo's .git/config. Labels are yours to name (up to 8). When several
+# rules match, the most specific wins: repos, then paths (longest first), then owners, then an
+# owner name that appears as a folder in the session's path. Anything unmatched gets default.
+#
+# This is a YAML subset: mappings, lists ("- x" or "[x, y]"), quoted strings, and # comments.
+
+default: work
+
+labels:
+  personal:
+    owners: [hacker1db]           # or "me" = every account gh is logged in to
+    paths: [~/.dotfiles]          # folders, even ones that aren't git repos
+
+  shared:
+    owners: [Example-Corp-Shared]
+
+  work:
+    owners: [example-org, example-org-web, my-work-org]
+    # repos: [hacker1db/clitools]   # owner/name or name; * globs

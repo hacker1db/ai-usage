@@ -333,6 +333,8 @@ type SessionRow struct {
 	Uncached  int64   `json:"uncached"`
 	Output    int64   `json:"output"`
 	Model     string  `json:"model"`
+	Owner     string  `json:"owner,omitempty"` // repository owner, set by the ownership classifier
+	Class     string  `json:"class,omitempty"` // ownership label (personal, work, ...), not stored in history
 	Detail    *Detail `json:"detail,omitempty"`
 }
 
