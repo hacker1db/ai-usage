@@ -149,9 +149,13 @@ var SessionSorts = []Option{{"recent", "Recent"}, {"tokens", "Tokens"}, {"active
 type Filters struct {
 	Tab, Metric, Range, Burn, Sort, Query string
 	Own                                   string // ownership label filter for the Work section; "" = all
+	Profile                               string // profile filter: a profiles: set name or a tool:profile key; "" = all
 }
 
-var ownRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,31}$`)
+var (
+	ownRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,31}$`)
+	profileRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._:-]{0,63}$`)
+)
 
 // Defaults are the initial selections.
 var Defaults = Filters{Tab: "all", Metric: "total", Range: "7d", Burn: "3", Sort: "recent"}
@@ -159,7 +163,7 @@ var Defaults = Filters{Tab: "all", Metric: "total", Range: "7d", Burn: "3", Sort
 // FromQuery reads filters from URL query parameters.
 func FromQuery(q url.Values) Filters {
 	f := Filters{Tab: q.Get("tab"), Metric: q.Get("metric"), Range: q.Get("range"), Burn: q.Get("burn"),
-		Sort: q.Get("sort"), Query: strings.TrimSpace(q.Get("q")), Own: q.Get("own")}
+		Sort: q.Get("sort"), Query: strings.TrimSpace(q.Get("q")), Own: q.Get("own"), Profile: q.Get("profile")}
 	return f.Normalize()
 }
 
@@ -181,6 +185,8 @@ func (f Filters) Link(override ...string) string {
 			g.Sort = v
 		case "own":
 			g.Own = v
+		case "profile":
+			g.Profile = v
 		}
 	}
 	q := url.Values{}
@@ -194,6 +200,7 @@ func (f Filters) Link(override ...string) string {
 	set("range", g.Range, Defaults.Range)
 	set("burn", g.Burn, Defaults.Burn)
 	set("sort", g.Sort, Defaults.Sort)
+	set("profile", g.Profile, "")
 	set("own", g.Own, "")
 	set("q", g.Query, "")
 	if len(q) == 0 {
@@ -219,6 +226,9 @@ func (f Filters) Normalize() Filters {
 	f.Sort = pick(f.Sort, SessionSorts, Defaults.Sort)
 	if f.Own = strings.ToLower(f.Own); !ownRe.MatchString(f.Own) {
 		f.Own = "" // labels come from projects.yaml; Build drops one that isn't configured
+	}
+	if f.Profile = strings.ToLower(f.Profile); !profileRe.MatchString(f.Profile) {
+		f.Profile = "" // Build drops a name that isn't a configured set or a profile with data
 	}
 	if len(f.Query) > 200 {
 		f.Query = f.Query[:200]

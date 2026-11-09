@@ -59,6 +59,12 @@ func (t Theme) Primary() Style   { return Style{FG: t.Ink.Primary} }
 func (t Theme) Secondary() Style { return Style{FG: t.Ink.Secondary} }
 func (t Theme) Muted() Style     { return Style{FG: t.Ink.Muted} }
 func (t Theme) Title() Style     { return Style{FG: t.Ink.Primary, Bold: true} }
+
+// Accent is decorative chrome color i (wrapping); it never encodes data.
+func (t Theme) Accent(i int) Style {
+	a := palette.Accent[t.Mode]
+	return Style{FG: a[((i%len(a))+len(a))%len(a)], Bold: true}
+}
 func (t Theme) Status(level string) Style {
 	return Style{FG: palette.Status[level]}
 }
@@ -180,6 +186,7 @@ func fit(l Line, w int) Line {
 type Doc struct {
 	W     int
 	Lines []Line
+	sec   int // sections drawn so far, to rotate their accent colors
 }
 
 // Add appends a builder's line.

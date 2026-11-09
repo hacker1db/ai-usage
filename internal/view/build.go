@@ -3,12 +3,14 @@ package view
 import (
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"ai-usage/internal/budget"
 	"ai-usage/internal/history"
+	"ai-usage/internal/ownership"
 	"ai-usage/internal/snapshot"
 	"ai-usage/internal/usage"
 	"ai-usage/internal/workreport"
@@ -275,34 +277,67 @@ type StatusRow struct {
 
 // Dashboard is every chart model for one view.
 type Dashboard struct {
-	Filters   Filters
-	Tab       Tab
-	Metric    Metric
-	Range     Range
-	Burn      Burn
-	Now       time.Time
-	Generated time.Time
-	Interval  int
-	Subtitle  string
-	TabCounts map[string]int
-	Hero      Hero
-	Cum       Cumulative
-	Stack     Stacked
-	Cards     []Card
-	Heat      Heatmap
-	Mix       []Mix
-	MixAll    Mix
-	Top       []SessionView
-	TopSub    string
-	Projects  []Project
-	Ownership Ownership
-	Sessions  []SessionView
-	SessionN  int
-	Models    []ModelRow
-	Work      Workstreams
-	Sources   Sources
-	Foot      []string
-	Empty     bool
+	Filters     Filters
+	Tab         Tab
+	Metric      Metric
+	Range       Range
+	Burn        Burn
+	Now         time.Time
+	Generated   time.Time
+	Interval    int
+	Subtitle    string
+	TabCounts   map[string]int
+	Hero        Hero
+	Cum         Cumulative
+	Stack       Stacked
+	Cards       []Card
+	Heat        Heatmap
+	Mix         []Mix
+	MixAll      Mix
+	Top         []SessionView
+	TopSub      string
+	Projects    []Project
+	Ownership   Ownership
+	Sessions    []SessionView
+	SessionN    int
+	Models      []ModelRow
+	Work        Workstreams
+	Sources     Sources
+	Foot        []string
+	Empty       bool
+	Profiles    []ProfileOpt // filter choices: configured sets, then single profiles with data
+	Profile     ProfileOpt   // the selection; ID "" = all profiles
+	ProfileHint string       // how to configure profile sets, shown when none are configured
+
+	match func(tool, profile string) bool // tab and profile filters combined
+}
+
+// ProfileOpt is one profile filter choice: a named set from projects.yaml or a single series.
+type ProfileOpt struct {
+	ID, Label string
+	Set       bool    // a configured profiles: set
+	Members   []Group // series with data the choice covers, fixed order
+	Value     float64 // the metric in range, within the current tab
+	patterns  []string
+}
+
+// Match reports whether a tool/profile pair passes the filter.
+func (o ProfileOpt) Match(tool, profile string) bool {
+	switch {
+	case o.ID == "":
+		return true
+	case o.Set:
+		return ownership.ProfileSet{Patterns: o.patterns}.Match(tool, profile)
+	}
+	return GroupOf(tool, profile).Key == o.ID
+}
+
+// Slot is the color slot for a single-profile choice (sets have none).
+func (o ProfileOpt) Slot() int {
+	if o.Set || len(o.Members) != 1 {
+		return -1
+	}
+	return o.Members[0].Slot
 }
 
 func floorHour(t time.Time) time.Time {
@@ -338,11 +373,14 @@ func Build(s *snapshot.Snapshot, f Filters, now time.Time) Dashboard {
 	d := Dashboard{Filters: f, Tab: f.TabOf(), Metric: f.MetricOf(), Range: f.RangeOf(), Burn: f.BurnOf(),
 		Now: now, Generated: s.Meta.Generated, Interval: s.Meta.Interval, TabCounts: map[string]int{}}
 	d.Subtitle = s.Meta.TZ + " · since " + DayLabel(s.Meta.Since) + " · data from " + HourFull(s.Meta.Generated)
+	from := floorHour(now).Add(-time.Duration(d.Range.Hours-1) * hour)
+	d.buildProfiles(s, from)
+	d.match = func(t, p string) bool { return d.Tab.Match(t, p) && d.Profile.Match(t, p) }
 
 	for _, t := range Tabs {
 		seen := map[string]bool{}
 		for _, r := range s.Rows {
-			if t.Match(r.Tool, r.Profile) {
+			if t.Match(r.Tool, r.Profile) && d.Profile.Match(r.Tool, r.Profile) {
 				seen[GroupOf(r.Tool, r.Profile).Key] = true
 			}
 		}
@@ -351,7 +389,7 @@ func Build(s *snapshot.Snapshot, f Filters, now time.Time) Dashboard {
 	var rows []history.HourRow
 	groupSet := map[string]bool{}
 	for _, r := range s.Rows {
-		if d.Tab.Match(r.Tool, r.Profile) {
+		if d.match(r.Tool, r.Profile) {
 			rows = append(rows, r)
 			groupSet[GroupOf(r.Tool, r.Profile).Key] = true
 		}
@@ -362,7 +400,6 @@ func Build(s *snapshot.Snapshot, f Filters, now time.Time) Dashboard {
 		groupKeys = append(groupKeys, k)
 	}
 
-	from := floorHour(now).Add(-time.Duration(d.Range.Hours-1) * hour)
 	d.buildHero(s, rows, groupKeys, from)
 	d.buildStack(rows)
 	d.buildCards(s, rows, from)
@@ -385,6 +422,70 @@ func Build(s *snapshot.Snapshot, f Filters, now time.Time) Dashboard {
 }
 
 func itoa(n int) string { return Exact(float64(n)) }
+
+// buildProfiles lists the profile filter choices and resolves the selection. Sets come from
+// projects.yaml's profiles: key in config order; single profiles follow in palette order, only
+// those with data. Values are the metric in range within the current tab.
+func (d *Dashboard) buildProfiles(s *snapshot.Snapshot, from time.Time) {
+	value := map[string]float64{}
+	pairs := map[string][][2]string{} // every tool/profile pair per series with data, to test set patterns
+	for _, r := range s.Rows {
+		if r.Tool == usage.ToolProxy {
+			continue
+		}
+		k := GroupOf(r.Tool, r.Profile).Key
+		if p := [2]string{r.Tool, r.Profile}; !slices.Contains(pairs[k], p) {
+			pairs[k] = append(pairs[k], p)
+		}
+		if d.Tab.Match(r.Tool, r.Profile) && !r.T.Before(from) {
+			value[k] += d.Metric.Row(r)
+		}
+	}
+	have := func(k string) bool { _, ok := pairs[k]; return ok }
+	order := append(append([]Group(nil), Groups...), Other)
+	all := ProfileOpt{Label: "All profiles"}
+	for _, g := range order {
+		if have(g.Key) {
+			all.Members = append(all.Members, g)
+			all.Value += value[g.Key]
+		}
+	}
+	d.Profiles = append(d.Profiles, all)
+	setNames := map[string]bool{}
+	for _, ps := range s.Meta.Ownership.Profiles {
+		setNames[ps.Name] = true
+		o := ProfileOpt{ID: ps.Name, Label: ps.Label, Set: true, patterns: ps.Patterns}
+		// Sum per row, not per series: "Other" can hold pairs a set only partly matches.
+		for _, r := range s.Rows {
+			if r.Tool != usage.ToolProxy && ps.Match(r.Tool, r.Profile) && d.Tab.Match(r.Tool, r.Profile) && !r.T.Before(from) {
+				o.Value += d.Metric.Row(r)
+			}
+		}
+		for _, g := range order {
+			if slices.ContainsFunc(pairs[g.Key], func(p [2]string) bool { return ps.Match(p[0], p[1]) }) {
+				o.Members = append(o.Members, g)
+			}
+		}
+		d.Profiles = append(d.Profiles, o)
+	}
+	for _, g := range order {
+		// Set names can't contain ":", so only the "other" key can collide; the set wins.
+		if have(g.Key) && !setNames[g.Key] {
+			d.Profiles = append(d.Profiles, ProfileOpt{ID: g.Key, Label: g.Label, Members: []Group{g}, Value: value[g.Key]})
+		}
+	}
+	d.Profile = all
+	for _, o := range d.Profiles {
+		if o.ID != "" && o.ID == d.Filters.Profile {
+			d.Profile = o
+			break
+		}
+	}
+	d.Filters.Profile = d.Profile.ID
+	if len(s.Meta.Ownership.Profiles) == 0 {
+		d.ProfileHint = "Group profiles into named filters with a profiles: section in projects.yaml (see projects.example.yaml)."
+	}
+}
 
 // tabBudget sums budgets only when every group in the tab has one with the same period and metric.
 func tabBudget(s *snapshot.Snapshot, keys []string) *budget.Budget {
@@ -434,6 +535,9 @@ func (d *Dashboard) buildHero(s *snapshot.Snapshot, rows []history.HourRow, keys
 	title := d.Tab.Label
 	if title == "All" {
 		title = "All tools"
+	}
+	if d.Profile.ID != "" {
+		title += " · " + d.Profile.Label
 	}
 	d.Hero = Hero{Title: title + " · last " + d.Range.Label, Value: rangeTotal, Unit: m.Unit}
 	period := "Month to date"
@@ -708,7 +812,7 @@ func (d *Dashboard) sessionsInRange(s *snapshot.Snapshot, from time.Time) []Sess
 	var out []SessionView
 	for _, x := range s.Sessions {
 		last := x.LastTime()
-		if !d.Tab.Match(x.Tool, x.Profile) || last.Before(from) {
+		if !d.match(x.Tool, x.Profile) || last.Before(from) {
 			continue
 		}
 		v := SessionView{SessionRow: x, Group: GroupOf(x.Tool, x.Profile), Value: d.Metric.Session(x),

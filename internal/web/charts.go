@@ -81,6 +81,7 @@ func cumulativeChart(c view.Cumulative) template.HTML {
 		c.Hours, round(c.Cum), round(c.ByHour), math.Round(c.Run), c.ProjRate, c.Budget})
 
 	s := newSVG(chartW, h, "chart cum", c.Desc, "data-cum", string(data))
+	gradients(s, m.left, chartW-m.right)
 	yGrid(s, m, h, c.YMax, y)
 
 	days := int(math.Round(hours / 24))
@@ -122,6 +123,25 @@ func cumulativeChart(c view.Cumulative) template.HTML {
 	s.el("rect", "class", "hit cum-hit", "x", num(m.left), "y", num(m.top), "width", num(chartW-m.left-m.right), "height", num(h-m.top-m.bottom))
 	s.end("svg")
 	return s.html()
+}
+
+// gradients defines the decorative fills the cumulative chart uses: a vertical wash under the
+// curve and a horizontal stroke. Stop colors come from CSS classes (accent tokens), not inline
+// styles, so the page stays within style-src 'self'.
+func gradients(s *svg, x0, x1 float64) {
+	s.start("defs")
+	s.start("linearGradient", "id", "cum-fill", "x1", "0", "y1", "0", "x2", "0", "y2", "1")
+	s.el("stop", "offset", "0", "class", "g-a1 g-strong")
+	s.el("stop", "offset", "0.55", "class", "g-a2 g-mid")
+	s.el("stop", "offset", "1", "class", "g-a2 g-clear")
+	s.end("linearGradient")
+	// User space, so a flat line (a zero-height bounding box) still gets a stroke.
+	s.start("linearGradient", "id", "cum-stroke", "gradientUnits", "userSpaceOnUse", "x1", num(x0), "y1", "0", "x2", num(x1), "y2", "0")
+	s.el("stop", "offset", "0", "class", "g-a0")
+	s.el("stop", "offset", "0.6", "class", "g-a1")
+	s.el("stop", "offset", "1", "class", "g-a2")
+	s.end("linearGradient")
+	s.end("defs")
 }
 
 // stackedChart is usage per bucket stacked by profile: thin bars (<= 24 units), 2-unit surface

@@ -61,6 +61,8 @@ type Classifier struct {
 	Auto    bool
 	ByType  bool // apply the user/org rule to sessions no config rule matched
 
+	Profiles []ProfileSet // named dashboard profile filters (profiles: key), config order
+
 	types  *Types
 	owners map[string]string // lowercased owner -> label
 	repos  []repoRule
@@ -135,14 +137,18 @@ func Parse(src string, me []string, t *Types) (*Classifier, error) {
 		root, ok = &Map{Vals: map[string]any{}}, true
 	}
 	if !ok {
-		return nil, errors.New("the top level must be a mapping with default: and labels:")
+		return nil, errors.New("the top level must be a mapping with default:, labels:, and profiles:")
 	}
 	c := newClassifier(t)
 	var warn []string
 	for _, k := range root.Keys {
-		if k != "default" && k != "labels" {
+		if k != "default" && k != "labels" && k != "profiles" {
 			warn = append(warn, "unknown key "+k)
 		}
+	}
+	// A broken profiles: section only drops the profile filters; the ownership rules still apply.
+	if c.Profiles, err = parseProfiles(root.Get("profiles")); err != nil {
+		warn = append(warn, err.Error()+" (profile filters ignored)")
 	}
 	c.Default, c.ByType = Org, true
 	if v, ok := root.Get("default").(string); ok {

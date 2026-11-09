@@ -32,6 +32,9 @@ func tokensCSS() string {
 		for i, v := range palette.Mix[m] {
 			fmt.Fprintf(&b, "  --mix%d: %s;\n", i, v)
 		}
+		for i, v := range palette.Accent[m] {
+			fmt.Fprintf(&b, "  --a%d: %s;\n", i, v)
+		}
 		for k, v := range palette.Status {
 			fmt.Fprintf(&b, "  --%s: %s;\n", k, v)
 		}

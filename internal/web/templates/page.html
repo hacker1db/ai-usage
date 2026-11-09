@@ -8,10 +8,10 @@
   <link rel="stylesheet" href="/static/app.css">
   <script type="module" src="/static/app.js"></script>
 </head>
-<body data-etag="{{.ETag}}" data-interval="{{.D.Interval}}" data-generated="{{.D.Generated.UnixMilli}}">
+<body class="dash" data-etag="{{.ETag}}" data-interval="{{.D.Interval}}" data-generated="{{.D.Generated.UnixMilli}}">
   <div class="shell">
     <aside class="sidebar" aria-label="Sections">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">◆</span> ai-usage</div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>ai-usage</span></div>
       <nav>
         <a href="#overview" class="nav-item">Overview</a>
         <a href="#top-sessions" class="nav-item">Top sessions</a>
@@ -34,7 +34,7 @@
 {{define "main"}}{{$d := .D}}{{$f := $d.Filters}}
 <header class="page-head">
   <div>
-    <h1>Token usage</h1>
+    <h1><span class="h1-grad">Token usage</span></h1>
     <p class="sub">{{$d.Subtitle}}</p>
   </div>
   <div class="head-actions">
@@ -45,7 +45,7 @@
 </header>
 
 <nav class="tabs" aria-label="Tool">
-  {{range .Tabs}}<a class="tab" href="{{$f.Link "tab" .ID}}" {{if eq .ID $f.Tab}}aria-current="page"{{end}}>{{.Label}} <span class="count">{{index $d.TabCounts .ID}}</span></a>{{end}}
+  {{range .Tabs}}<a class="tab t-{{.ID}}" href="{{$f.Link "tab" .ID}}" {{if eq .ID $f.Tab}}aria-current="page"{{end}}>{{.Label}} <span class="count">{{index $d.TabCounts .ID}}</span></a>{{end}}
 </nav>
 
 <div class="controls">
@@ -56,16 +56,18 @@
   <div class="seg" role="group" aria-label="Range">{{range .Ranges}}<a href="{{$f.Link "range" .ID}}" {{if eq .ID $f.Range}}aria-current="true"{{end}}>{{.Label}}</a>{{end}}</div>
 </div>
 
+{{template "profilebar" $d}}
+
 <div id="notice" class="notice" hidden></div>
 {{if .Pending}}<div class="notice">Collecting usage for the first time… this page refreshes when it's ready.</div>{{end}}
 
-<section class="card" id="overview" aria-labelledby="hero-title">
+<section class="card hero-card" id="overview" aria-labelledby="hero-title">
   <div class="hero">
     <div class="hero-main">
       <div class="hero-title" id="hero-title">{{$d.Hero.Title}}</div>
       <div class="hero-number" title="{{exact $d.Hero.Value}}">{{compact $d.Hero.Value}}<span class="hero-unit">{{$d.Hero.Unit}}</span></div>
     </div>
-    <dl class="hero-stats">{{range $d.Hero.Stats}}<div><dt>{{.Label}}</dt><dd>{{.Value}}</dd></div>{{end}}</dl>
+    <dl class="hero-stats">{{range $i, $x := $d.Hero.Stats}}<div class="stat a{{mod $i 4}}"><dt>{{$x.Label}}</dt><dd>{{$x.Value}}</dd></div>{{end}}</dl>
   </div>
   <div class="chart-wrap">{{cumulative $d.Cum}}</div>
   <p class="chart-desc">{{$d.Cum.Desc}}</p>
@@ -126,7 +128,7 @@
 <section id="profiles" aria-labelledby="profiles-title">
   <h2 class="section-title" id="profiles-title">Profiles</h2>
   <div class="grid">{{range $d.Cards}}
-    <article class="card group-card">
+    <article class="card group-card c{{.Group.Slot}}">
       <div class="name">{{swatch .Group.Slot}}{{.Group.Label}}</div>
       <div class="big" title="{{exact .Total}}">{{compact .Total}}</div>
       <dl class="facts">
@@ -204,6 +206,23 @@
   {{range $d.Sources.Warnings}}<p class="status warning"><span aria-hidden="true">!</span>{{.}}</p>{{end}}
 </section>
 {{end}}
+
+{{define "profilebar"}}{{$f := .Filters}}
+<nav class="profile-bar" aria-label="Profile filter">
+  <span class="pbar-label">Profiles</span>
+  <div class="pchips">
+    {{range .Profiles}}{{if not .ID}}{{template "pchip" (pchip . $f)}}{{end}}{{end}}
+    {{range .Profiles}}{{if .Set}}{{template "pchip" (pchip . $f)}}{{end}}{{end}}
+    <span class="pdiv" aria-hidden="true"></span>
+    {{range .Profiles}}{{if and .ID (not .Set)}}{{template "pchip" (pchip . $f)}}{{end}}{{end}}
+  </div>
+  {{if .ProfileHint}}<p class="pbar-hint">{{.ProfileHint}}</p>{{end}}
+</nav>
+{{end}}
+
+{{define "pchip"}}{{$o := .O}}<a class="pchip{{if $o.Set}} set{{else if $o.ID}} one c{{$o.Slot}}{{else}} all{{end}}" href="{{.F.Link "profile" $o.ID}}"{{if eq $o.ID .F.Profile}} aria-current="true"{{end}}{{if $o.Set}} title="{{join $o.Label (memberLabels $o.Members)}}"{{end}}>
+  <span class="dots" aria-hidden="true">{{range $o.Members}}<span class="dot s{{.Slot}}"></span>{{end}}</span>
+  <span class="plabel">{{$o.Label}}</span><span class="pval">{{compact $o.Value}}</span></a>{{end}}
 
 {{define "ownership"}}{{$o := .Ownership}}{{$f := .Filters}}
 <div class="card" id="ownership" aria-labelledby="ownership-title">

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ai-usage/internal/history"
+	"ai-usage/internal/ownership"
 	"ai-usage/internal/snapshot"
 	"ai-usage/internal/usage"
 	"ai-usage/internal/view"
@@ -115,4 +116,60 @@ func TestHostAndLoopbackChecks(t *testing.T) {
 		}
 	}
 	_ = http.StatusOK
+}
+
+func TestProfileBarRenders(t *testing.T) {
+	s, err := New(nil, 8790, "", slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	snap := fixture(now)
+	snap.Meta.Ownership.Profiles = []ownership.ProfileSet{{Name: "mine", Label: `<i>Me & "mine"</i>`, Patterns: []string{"claude-code:personal"}}}
+	render := func(f view.Filters) string {
+		rec := httptest.NewRecorder()
+		s.render(rec, "page", pageData{D: view.Build(snap, f, now), Tabs: view.TabOptions(), Metrics: view.MetricOptions(),
+			Burns: view.BurnOptions(), Ranges: view.RangeOptions(), Sorts: view.SessionSorts})
+		if rec.Code != 200 {
+			t.Fatalf("%+v: status %d: %s", f, rec.Code, rec.Body)
+		}
+		b := rec.Body.String()
+		i := strings.Index(b, `<nav class="profile-bar"`)
+		if i < 0 {
+			t.Fatal("no profile bar")
+		}
+		return b[i : i+strings.Index(b[i:], "</nav>")] // the profile bar only
+	}
+	body := render(view.Filters{Profile: "mine"}.Normalize())
+	if strings.Contains(body, "<i>Me") {
+		t.Error("profile label was not escaped")
+	}
+	if !strings.Contains(body, "&lt;i&gt;Me &amp; &#34;mine&#34;&lt;/i&gt;") {
+		t.Error("escaped profile label missing")
+	}
+	chip := func(body, href string) string {
+		i := strings.Index(body, `href="`+href+`"`)
+		if i < 0 {
+			t.Fatalf("no chip linking %s", href)
+		}
+		j := strings.Index(body[i:], ">")
+		return body[strings.LastIndex(body[:i], "<a ") : i+j]
+	}
+	if c := chip(body, "?profile=mine"); !strings.Contains(c, `class="pchip set"`) || !strings.Contains(c, `aria-current="true"`) {
+		t.Errorf("selected set chip = %s", c)
+	}
+	if c := chip(body, "?"); strings.Contains(c, "aria-current") || !strings.Contains(c, "pchip all") {
+		t.Errorf("all chip = %s", c)
+	}
+	if strings.Count(body, `<a class="pchip`) != 4 { // all, mine, claude-code:personal, codex:work-foundry
+		t.Errorf("chips = %d:\n%s", strings.Count(body, `<a class="pchip`), body)
+	}
+
+	body = render(view.Filters{Profile: "codex:work-foundry"}.Normalize())
+	if c := chip(body, "?profile=codex%3Awork-foundry"); !strings.Contains(c, `class="pchip one c5"`) || !strings.Contains(c, `aria-current="true"`) {
+		t.Errorf("selected single chip = %s", c)
+	}
+	if c := chip(body, "?profile=mine"); strings.Contains(c, "aria-current") {
+		t.Errorf("unselected set chip = %s", c)
+	}
 }

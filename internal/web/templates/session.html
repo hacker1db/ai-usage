@@ -20,12 +20,12 @@
     </header>
     <section class="card">
       <dl class="hero-stats">
-        <div><dt>Total tokens</dt><dd title="{{exacti $s.Total}}">{{compacti $s.Total}}</dd></div>
-        <div><dt>Uncached</dt><dd title="{{exacti $s.Uncached}}">{{compacti $s.Uncached}}</dd></div>
-        <div><dt>Output</dt><dd title="{{exacti $s.Output}}">{{compacti $s.Output}}</dd></div>
-        <div><dt>Requests</dt><dd>{{exacti $s.Requests}}</dd></div>
-        <div><dt>Active time</dt><dd>{{dur $s.ActiveMin}}</dd></div>
-        <div><dt>First → last</dt><dd>{{whenStr $s.First}} → {{whenStr $s.Last}}</dd></div>
+        <div class="stat a0"><dt>Total tokens</dt><dd title="{{exacti $s.Total}}">{{compacti $s.Total}}</dd></div>
+        <div class="stat a1"><dt>Uncached</dt><dd title="{{exacti $s.Uncached}}">{{compacti $s.Uncached}}</dd></div>
+        <div class="stat a2"><dt>Output</dt><dd title="{{exacti $s.Output}}">{{compacti $s.Output}}</dd></div>
+        <div class="stat a3"><dt>Requests</dt><dd>{{exacti $s.Requests}}</dd></div>
+        <div class="stat a0"><dt>Active time</dt><dd>{{dur $s.ActiveMin}}</dd></div>
+        <div class="stat a1"><dt>First → last</dt><dd>{{whenStr $s.First}} → {{whenStr $s.Last}}</dd></div>
       </dl>
     </section>
     {{with $s.Detail}}

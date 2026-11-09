@@ -53,6 +53,8 @@ type Ownership struct {
 	Labels  []string `json:"labels"`  // display order
 	Default string   `json:"default"` // label when no rule matches
 	Warning string   `json:"warning"`
+	// Profiles are the named profile filters from projects.yaml's profiles: key.
+	Profiles []ownership.ProfileSet `json:"profiles,omitempty"`
 }
 
 // Snapshot is everything a dashboard view needs.
@@ -231,7 +233,7 @@ func (c *Collector) build(now time.Time) (*Snapshot, error) {
 			History: tildeOr(o.HistoryPath), HistoryRows: histRows, HistoryOnlyRows: kept, HistorySince: histSince,
 			HistoryWarning: c.history.Warning, WorkReportDir: tildeOr(o.WorkReportDir),
 			Ownership: Ownership{Source: cls.Source, Auto: cls.Auto, Labels: cls.Labels, Default: cls.Default,
-				Warning: cls.Warning},
+				Warning: cls.Warning, Profiles: cls.Profiles},
 		},
 		Sources:    status,
 		Budgets:    budgets,

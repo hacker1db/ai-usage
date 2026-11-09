@@ -49,14 +49,19 @@ test instead of silently dropping usage.
 
 Both front ends draw the same typed chart models from `internal/view`, so they always agree. Colors
 come from one validated palette (`internal/palette`): fixed categorical slots per tool and profile
-(colorblind-safe for adjacent pairs, light and dark), a one-hue sequential ramp for magnitude, and
+(colorblind-safe for adjacent pairs, light and dark), a gold-to-indigo sequential ramp for magnitude
+(lightness falls monotonically), decorative accents that never encode data, and
 reserved status colors that always carry an icon and a label.
 
-- **Controls:** tab (All, Claude, Codex, Copilot, Foundry), metric (total, uncached = input -
+- **Controls:** tab (All, Claude, Codex, Copilot, Foundry), profile (see below), metric (total, uncached = input -
   cached + output, output, requests), burn-rate window (1h/3h/6h), and range (24h hourly, 7d in
   4-hour buckets, 30d daily). On the web these are links (`/?tab=foundry&range=30d` bookmarks a
-  view). In the TUI they're keys: `tab`/`1-5`, `m`, `r`, `b`, `s`, `f` refresh, `j/k` scroll,
-  `o` ownership filter, `?` help, `q` quit.
+  view). In the TUI they're keys: `tab`/`1-5`, `m`, `r`, `b`, `s`, `p`/`P` profile, `f` refresh,
+  `j/k` scroll, `o` ownership filter, `?` help, `q` quit.
+- **Profile filter:** a chip bar under the controls narrows every chart, card, and session list
+  to one profile (`?profile=claude-code:personal`) or a named group you define under `profiles:`
+  in `projects.yaml` (`?profile=work`). It combines with the tab. Each chip shows its series
+  colors and its usage in range.
 - **Overview:** range total, today, burn rate, month (or budget period) to date, and a cumulative
   curve with the projection to the period end at the trailing 7-day average. Hover shows any hour.
 - **Where the tokens went:** the top sessions by the selected metric, with their share of the range.
@@ -107,6 +112,21 @@ labels:
   personal:
     paths: [~/Developer/sites]
 ```
+The same file defines the dashboard's **profile filters**. Each entry names a group of
+`tool:profile` series (or a bare profile name, matching any tool), with `*` globs, up to 12:
+
+```yaml
+profiles:
+  personal: [claude-code:personal, codex:personal-chatgpt]
+  work: [claude-code:work-*, codex:work-foundry, copilot:*]
+  foundry:
+    label: Azure Foundry
+    match: [work-foundry]
+```
+
+A broken `profiles:` section only drops the profile filters (with a warning on the dashboard).
+The ownership rules still apply.
+
 
 The file is a YAML subset, parsed without a dependency: mappings, `- item` and `[a, b]` lists,
 quoted strings, and comments. Anything else (anchors, `{}` maps, `|` blocks) is an error with a

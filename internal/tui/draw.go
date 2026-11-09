@@ -48,9 +48,10 @@ func Draw(d *view.Dashboard, th Theme, w int, st Status) Frame {
 
 func section(doc *Doc, th Theme, title, sub string) {
 	doc.Blank()
-	b := new(B).T(title, th.Title())
+	b := new(B).T("▍", th.Accent(doc.sec)).T(title, th.Title())
+	doc.sec++
 	if sub != "" {
-		b.T("  "+Truncate(sub, doc.W-Width(title)-2), th.Muted())
+		b.T("  "+Truncate(sub, doc.W-Width(title)-3), th.Muted())
 	}
 	doc.Add(b)
 }
@@ -62,7 +63,7 @@ func drawHeader(doc *Doc, d *view.Dashboard, th Theme, st Status) {
 		level, text = "warning", "stale"
 	}
 	right := text + " · updated " + age.String() + " ago · " + st.Source
-	b := new(B).T("ai-usage", th.Title()).T(" · Token usage", th.Primary())
+	b := new(B).T("◆ ", th.Accent(2)).T("ai-usage", th.Accent(0)).T(" · Token usage", th.Primary())
 	b.To(doc.W-Width(right)-2).C('●', th.Status(level)).Sp(1).T(right, th.Secondary())
 	doc.Add(b)
 	doc.Text(d.Subtitle, th.Muted())
@@ -75,7 +76,7 @@ func drawHeader(doc *Doc, d *view.Dashboard, th Theme, st Status) {
 		label := " " + t.Label + " " + view.Exact(float64(d.TabCounts[t.ID])) + " "
 		s := th.Secondary()
 		if t.ID == d.Tab.ID {
-			s = Style{FG: th.Ink.Primary, Bold: true, Inverse: true}
+			s = Style{FG: th.Ink.Surface, BG: tabColor(th, t.ID), Bold: true}
 		}
 		if i > 0 {
 			tabs.T("│", th.Muted())
@@ -106,7 +107,47 @@ func drawHeader(doc *Doc, d *view.Dashboard, th Theme, st Status) {
 	group("range", view.RangeOptions(), d.Filters.Range, "r")
 	group("burn", view.BurnOptions(), d.Filters.Burn, "b")
 	doc.Add(ctl)
+	drawProfileBar(doc, d, th)
 	doc.Text(strings.Repeat("─", doc.W), Style{FG: th.Ink.Axis})
+}
+
+// tabColor tints the selected tool tab with the color of the tool's main series.
+func tabColor(th Theme, id string) string {
+	slot := map[string]int{"claude": 2, "codex": 4, "copilot": 6, "foundry": 3}[id]
+	if slot == 0 {
+		return palette.Accent[th.Mode][1]
+	}
+	return th.Series(slot)
+}
+
+// drawProfileBar lists the profile filter choices; p / P cycles them.
+func drawProfileBar(doc *Doc, d *view.Dashboard, th Theme) {
+	line := new(B).T("profile ", th.Muted())
+	flush := func() {
+		doc.Add(line)
+		line = new(B).Sp(8)
+	}
+	for _, o := range d.Profiles {
+		g := new(B)
+		if slot := o.Slot(); slot >= 0 {
+			g.C('●', Style{FG: th.Series(slot)})
+		} else {
+			for _, m := range o.Members {
+				g.C('•', Style{FG: th.Series(m.Slot)})
+			}
+		}
+		st := th.Muted()
+		if o.ID == d.Profile.ID {
+			st = Style{FG: th.Ink.Primary, Bold: true, Underline: true}
+		}
+		g.Sp(1).T(o.Label, st).Sp(2)
+		if line.Len() > 8 && line.Len()+g.Len() > doc.W-5 {
+			flush()
+		}
+		line.l = append(line.l, g.l...)
+	}
+	line.T("(p)", th.Muted())
+	doc.Add(line)
 }
 
 func drawHero(doc *Doc, d *view.Dashboard, th Theme) {

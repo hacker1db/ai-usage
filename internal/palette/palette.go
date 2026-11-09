@@ -17,9 +17,11 @@ var Series = map[Mode][9]string{
 	Dark:  {"#8f8e86", "#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"},
 }
 
-// Sequential is the blue ramp, step 100 (near zero) to 700, for magnitude (heatmaps).
-var Sequential = []string{"#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7",
-	"#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"}
+// Sequential is a multi-hue magnitude ramp (pale gold → coral → magenta → deep indigo), step 100
+// (near zero) to 700, for heatmaps. Lightness falls monotonically, so it still reads as "more" in
+// grayscale and for color-vision deficiencies; the hue shift only adds warmth.
+var Sequential = []string{"#fff4cf", "#fde7a4", "#fdd283", "#fcb86a", "#f99b5c", "#f17c57", "#e35f5c",
+	"#cc4866", "#ae366f", "#8c2a74", "#6b2273", "#4b1b6a", "#2f145a"}
 
 // Status colors are reserved for state and always ship with an icon and label.
 var Status = map[string]string{"good": "#0ca30c", "warning": "#fab219", "serious": "#ec835a", "critical": "#d03b3b"}
@@ -35,11 +37,17 @@ var Inks = map[Mode]Ink{
 	Dark:  {"#1a1a19", "#0d0d0d", "#f0efec", "#c3c2b7", "#898781", "#2c2c2a", "#383835"},
 }
 
-// Mix colors the token-composition parts in cost order (cache read → fresh input → output),
-// as three ordinal steps of the sequential ramp.
+// Mix colors the token-composition parts in cost order (cache read → fresh input → output) as
+// three ordinal steps of the sequential ramp: cheap cache reads recede, output stands out.
 var Mix = map[Mode][3]string{
-	Light: {"#9ec5f4", "#3987e5", "#184f95"},
-	Dark:  {"#184f95", "#3987e5", "#9ec5f4"},
+	Light: {"#fdd283", "#d9484f", "#6b2273"},
+	Dark:  {"#8c2a74", "#d9484f", "#fdd283"},
+}
+
+// Accent colors decorate chrome (hero glow, tab underlines, section marks). They never encode data.
+var Accent = map[Mode][4]string{
+	Light: {"#2a78d6", "#6250d6", "#e34f8a", "#eb6834"},
+	Dark:  {"#5aa2ff", "#9b8cff", "#ff6fae", "#ff8a4c"},
 }
 
 // RGB parses #rrggbb.

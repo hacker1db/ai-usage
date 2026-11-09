@@ -312,6 +312,19 @@ func (s *screen) key(k string, src source) bool {
 			}
 		}
 		f.Own = view.Cycle(opts, f.Own, 1)
+	case "p", "P":
+		if snap, _ := src.Current(); snap != nil {
+			d := view.Build(snap, *f, time.Now())
+			opts := make([]view.Option, len(d.Profiles))
+			for i, o := range d.Profiles {
+				opts[i] = view.Option{ID: o.ID, Label: o.Label}
+			}
+			step := 1
+			if k == "P" {
+				step = -1
+			}
+			f.Profile = view.Cycle(opts, d.Filters.Profile, step)
+		}
 	case "f":
 		src.Refresh()
 	case "j", "down":
@@ -338,6 +351,7 @@ var helpLines = []string{
 	"  r / R                  next / previous range (24h, 7d, 30d)",
 	"  b                      burn-rate window (1h, 3h, 6h)",
 	"  s                      session sort (recent, tokens, active time)",
+	"  p / P                  profile filter: all, the profiles: sets in projects.yaml, then each profile",
 	"  o                      ownership filter for projects and sessions (all, personal, work, ...)",
 	"  f                      refresh now",
 	"  j k ↑ ↓                scroll a line",
@@ -383,7 +397,7 @@ func (s *screen) draw(out io.Writer, src source) {
 			lines = append(lines, fit(nil, cols))
 		}
 		pos := fmt.Sprintf(" %d-%d of %d ", s.scroll+1, end, len(f.Body))
-		hint := "? help · tab switch · m metric · r range · b burn · s sort · o owner · f refresh · j/k scroll · q quit"
+		hint := "? help · tab switch · m metric · r range · b burn · s sort · p profile · o owner · f refresh · j/k scroll · q quit"
 		foot := new(B).T(Truncate(hint, cols-Width(pos)-1), th.Muted())
 		foot.To(cols-Width(pos)).T(pos, th.Secondary())
 		lines = append(lines, foot.Line(cols))
