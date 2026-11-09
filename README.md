@@ -17,7 +17,7 @@ Every tool's logs are read read-only. Only counters, model names, timestamps, se
 ```zsh
 make build                     # bin/ai-usage and bin/foundry-entra-proxy
 make check                     # gofmt, vet, race tests, JS syntax check, stdlib-only rule
-bin/ai-usage serve             # web dashboard in the foreground
+bin/ai-usage serve             # web dashboard in the foreground; prints the URL and opens it (-open=false to skip)
 bin/ai-usage tui               # terminal dashboard (reads the running dashboard, else collects locally)
 bin/ai-usage report -days 7 -print
 ```

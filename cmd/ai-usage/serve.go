@@ -9,7 +9,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -29,6 +31,7 @@ func runServe(args []string) error {
 	config := fs.String("config", paths.ConfigFile(), "budgets file (see dashboard.example.json)")
 	projects := fs.String("projects", paths.ProjectsFile(), "ownership rules (see projects.example.yaml)")
 	noHistory := fs.Bool("no-history", false, "keep history in memory only")
+	open := fs.Bool("open", isTerminal(os.Stdout), "open the dashboard in the default browser (default true in a terminal)")
 	opts := sourceFlags(fs)
 	_ = fs.Parse(args)
 
@@ -58,8 +61,15 @@ func runServe(args []string) error {
 	}
 	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute,
 		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelWarn)}
-	log.Info("ai-usage dashboard", "url", "http://"+ln.Addr().String(), "interval", interval.String(),
+	url := "http://" + ln.Addr().String()
+	log.Info("ai-usage dashboard", "url", url, "interval", interval.String(),
 		"history", histPath, "version", version)
+	fmt.Printf("\nDashboard running at %s  (Ctrl+C to stop)\n\n", url)
+	if *open {
+		if err := openBrowser(url); err != nil {
+			log.Warn("could not open browser", "err", err)
+		}
+	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.Serve(ln) }()
 	select {
@@ -73,6 +83,31 @@ func runServe(args []string) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// openBrowser hands url to the platform's default URL handler without waiting for it.
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }() // reap the helper process
+	return nil
+}
+
+// isTerminal reports whether f is an interactive terminal, so redirected or
+// service runs don't try to launch a browser.
+func isTerminal(f *os.File) bool {
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
 func envInt(name string, d int) int {
