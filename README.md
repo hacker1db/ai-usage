@@ -198,3 +198,41 @@ patterns, and keeping usage data out of git.
   (`gh api /users/<login>/settings/billing/premium_request/usage` with the right token scope).
 - Copilot in VS Code keeps no local token usage. Codex `history.jsonl` holds prompt text only and
   is not read.
+
+## Provider billing costs
+
+`ai-usage cost` retrieves provider-reported billing usage as JSON, independently of
+local token logs. It uses existing `az login` / `gh auth login` credentials and does
+not store tokens, change subscriptions, or make purchases. Each invocation queries
+one explicit account and month; amounts are not combined across currencies or with
+token-derived estimates. Errors exit nonzero without emitting a misleading zero report.
+
+```sh
+ai-usage cost -provider azure -month 2026-11 \
+  -subscription YOUR-SUBSCRIPTION-UUID \
+  -resources /subscriptions/YOUR-SUBSCRIPTION-UUID/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/YOUR-FOUNDRY-ACCOUNT
+
+ai-usage cost -provider copilot -github-scope users -github-account YOUR-LOGIN -month 2026-11
+ai-usage cost -provider copilot -github-scope organizations -github-account YOUR-ORG -month 2026-11
+```
+
+Azure uses Cost Management `ActualCost`, aggregated daily as `PreTaxCost`, filtered
+by the specified Cognitive Services account resource IDs (comma-separated for several).
+Use billing-reader access on the selected subscription. Resource filtering can omit
+marketplace or other charges not attributed to those resource IDs; this is not a complete
+subscription invoice. The API returns billing currency, which is preserved per item.
+Continuation pages are followed only within the selected subscription's query endpoint.
+
+Copilot defaults to the AI-credit billing endpoint. Use `-github-mode premium_request`
+for premium-request billing. These modes are alternatives and must not be added together.
+The result uses `netAmount`, after provider discounts, in USD. It excludes subscription
+seat fees and taxes. Organization-managed licenses require the organization's billing
+scope and appropriate permissions; personal endpoints do not include that usage.
+An empty successful report means no returned metered usage, not a free subscription.
+
+Provider data may be delayed or adjusted and is not proof of a finalized or paid invoice.
+Reports include account, month, retrieval time, and their accounting basis. This command
+is on-demand; it does not yet feed the web/TUI dashboard or periodically sync billing.
+
+API contracts: [Azure Cost Management](https://learn.microsoft.com/en-us/rest/api/cost-management/query/usage?view=rest-cost-management-2026-06-01)
+and [GitHub billing usage](https://docs.github.com/en/rest/billing/usage).
