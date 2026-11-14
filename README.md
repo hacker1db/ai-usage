@@ -198,3 +198,107 @@ patterns, and keeping usage data out of git.
   (`gh api /users/<login>/settings/billing/premium_request/usage` with the right token scope).
 - Copilot in VS Code keeps no local token usage. Codex `history.jsonl` holds prompt text only and
   is not read.
+
+## Provider billing costs
+
+`ai-usage cost` retrieves provider-reported billing usage as JSON, independently of
+local token logs. It uses existing `az login` / `gh auth login` credentials and does
+not store tokens, change subscriptions, or make purchases. Each invocation queries
+one explicit account and month; amounts are not combined across currencies or with
+token-derived estimates. Errors exit nonzero without emitting a misleading zero report.
+
+```sh
+ai-usage cost -provider azure                 # current az subscription, all Foundry accounts
+ai-usage cost -provider copilot               # the logged-in gh user
+ai-usage cost -provider copilot -github-scope organizations -github-account YOUR-ORG -month 2026-11
+```
+
+Azure uses Cost Management `ActualCost`, aggregated daily as `PreTaxCost`, filtered
+by the specified Cognitive Services account resource IDs (comma-separated for several).
+Use billing-reader access on the selected subscription. Resource filtering can omit
+marketplace or other charges not attributed to those resource IDs; this is not a complete
+subscription invoice. The API returns billing currency, which is preserved per item.
+Continuation pages are followed only within the selected subscription's query endpoint.
+
+Copilot defaults to the AI-credit billing endpoint. Use `-github-mode premium_request`
+for premium-request billing. These modes are alternatives and must not be added together.
+The result uses `netAmount`, after provider discounts, in USD. It excludes subscription
+seat fees and taxes. Organization-managed licenses require the organization's billing
+scope and appropriate permissions; personal endpoints do not include that usage.
+An empty successful report means no returned metered usage, not a free subscription.
+
+Provider data may be delayed or adjusted and is not proof of a finalized or paid invoice.
+Reports include account, month, retrieval time, and their accounting basis.
+
+### Costs in the dashboard and TUI
+
+No configuration is needed. `serve` and `tui` show a **Costs** section near the top for the
+billing accounts found on this machine:
+
+- **Azure Foundry** when a Claude profile (`ANTHROPIC_FOUNDRY_RESOURCE` / `ANTHROPIC_FOUNDRY_BASE_URL`
+  in its `settings.json` or the environment) or a Codex home (Azure `base_url` hosts in
+  `config.toml`) uses a Foundry endpoint and the `az` CLI is installed. The matching resource and
+  its subscription are found with Azure Resource Graph, wherever they live.
+- **GitHub Copilot** for the logged-in `gh` user when the `gh` CLI is installed and Copilot CLI has
+  been used here.
+
+Each account is one card: the current UTC month's spend, a projection, the previous month, a daily
+sparkline (Azure), and the biggest models/SKUs/resources. A Copilot seat assigned by an
+organization is billed to that organization's pooled AI credits, so GitHub reports no metered
+usage on your personal account and won't filter organization usage by user. For that case the card
+shows your usage from Copilot's local AI-credit log at GitHub's published $0.01 per credit.
+
+To override detection, add a `billing` list to `dashboard.json` (an empty list turns costs off):
+
+```json
+{ "billing": [ { "provider": "azure" }, { "provider": "copilot" } ] }
+```
+
+Set `label`, `endpoints`, `subscription`, `resources`, `github_scope`, `github_account` (required
+for organizations), or `github_mode` only to override the defaults. `subscription` alone reports
+every Foundry account in that subscription.
+
+### Usage at API prices
+
+Below the billing cards, **Usage at API prices** prices every profile's logged tokens at the
+providers' public pay-as-you-go rates (`internal/pricing`, with the date and source pages): fresh
+input, cache reads, 5-minute and 1-hour cache writes, and output are priced separately. Copilot
+rows use their logged AI credits. It follows the tab and profile filters and shows, per profile,
+the selected range, month to date, a projection, and the previous month; the Models table and the
+hero show the same estimate. Personal subscriptions (Claude Pro/Max, ChatGPT) are flat-rate, so
+there it's the value of the usage, not money spent. Models without a public price are listed and
+left out.
+
+Before querying, ai-usage checks the login and token scopes. When something is missing, the
+dashboard, TUI, and `ai-usage cost` show the exact fix, for example:
+
+| Problem | Fix shown |
+| --- | --- |
+| gh token lacks the `user` scope (personal billing) | `gh auth refresh -h github.com -s user` |
+| gh names another missing scope | `gh auth refresh -h github.com -s <scope>` |
+| gh not logged in | `gh auth login -h github.com` |
+| Azure sign-in expired | the `az logout && az login --tenant … --scope …` command az suggests |
+| Azure not signed in | `az login` |
+| No cost access on the subscription | ask an owner for the **Cost Management Reader** role |
+| Foundry resource not visible to you | ask for **Reader** and **Cost Management Reader** on its subscription |
+| Resource Graph extension missing | `az extension add --name resource-graph` |
+| Azure or GitHub rate limit (429) | nothing: the last good figures stay up and the query backs off |
+
+#### Staying inside provider rate limits
+
+Billing is queried in the background on each provider's cadence, not on every token collection:
+
+| What | Refreshed every | Why |
+| --- | --- | --- |
+| Azure, month in progress | 4 hours | Cost Management refreshes cost data about every four hours, and its query quota (12 per 10 s, 60 per minute, 600 per hour) is shared by the whole tenant, including the portal's Cost analysis |
+| Copilot, month in progress | 1 hour | far below GitHub's 5,000 requests per hour |
+| Either, previous month | 24 hours | a closed month barely changes |
+
+`billing_refresh_minutes` in `dashboard.json` overrides the month in progress (minimum 30).
+Queries run one at a time, 15 seconds apart. A rate-limited or failed query backs off 5, 10, 20 …
+minutes up to 2 hours, with jitter, or for the provider's own retry-after when it gives one.
+Meanwhile the card keeps the last good report with a normal status and its next update time; a
+rate limit is only shown when there is no data yet. Results and back-off live in `billing.json`
+in the data folder, shared under a file lock, so restarts, `tui -local`, and a second dashboard
+reuse fresh results instead of querying again. Costs are not filtered by tab or profile and are
+never added to token counts.

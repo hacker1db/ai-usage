@@ -11,7 +11,7 @@ import (
 )
 
 // CodexProviders maps a Codex model_provider id to a profile label.
-var CodexProviders = map[string]string{"openai": "personal-chatgpt", "foundry": "work-foundry"}
+var CodexProviders = map[string]string{"openai": "personal-chatgpt", "foundry": "work-foundry", "azure": "work-foundry"}
 
 var patchFile = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add|Delete) File: (.+)$`)
 

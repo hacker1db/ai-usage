@@ -180,10 +180,13 @@ func pickSource(ctx context.Context, o Options) (source, string) {
 		cancel()
 		var ne net.Error
 		var oe *net.OpError
-		if err == nil {
+		s.mu.Lock()
+		incompatible := err == nil && s.snap == nil && s.err != nil // e.g. a dashboard from another version
+		s.mu.Unlock()
+		if err == nil && !incompatible {
 			return s, ""
 		}
-		if !errors.As(err, &oe) && !errors.As(err, &ne) {
+		if !incompatible && !errors.As(err, &oe) && !errors.As(err, &ne) {
 			return s, ""
 		}
 	}
@@ -194,6 +197,7 @@ func pickSource(ctx context.Context, o Options) (source, string) {
 func Once(ctx context.Context, o Options) error {
 	src, _ := pickSource(ctx, o)
 	if l, ok := src.(*localSource); ok {
+		l.c.SyncCosts(ctx)
 		l.c.Refresh()
 	}
 	snap, st := src.Current()

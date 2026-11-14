@@ -28,6 +28,8 @@ func main() {
 		err = runServe(args)
 	case "tui":
 		err = runTUI(args)
+	case "cost":
+		err = runCost(args)
 	case "report":
 		err = runReport(args)
 	case "version", "-version", "--version":
@@ -51,6 +53,7 @@ commands:
   serve    live web dashboard on a loopback address (default http://127.0.0.1:8790); opens the browser, -open=false to skip
   tui      live terminal dashboard; reads a running dashboard, else collects locally
   report   write reports/<today>/{report.md,usage.json,usage.csv}
+  cost     retrieve actual Azure or Copilot metered costs as JSON
   version  print the version
 
 Run "ai-usage <command> -h" for a command's flags.
@@ -84,7 +87,7 @@ func sourceFlags(fs *flag.FlagSet) func() sources.Options {
 	copilot := fs.String("copilot-db", d.CopilotDB, "Copilot CLI session store")
 	proxy := fs.String("proxy-log", d.ProxyLog, "foundry-entra-proxy log")
 	return func() sources.Options {
-		o := sources.Options{CodexHome: *codex, CopilotDB: *copilot, ProxyLog: *proxy}
+		o := sources.Options{CodexHome: *codex, CodexExtra: sources.DefaultCodexExtras(*codex), CopilotDB: *copilot, ProxyLog: *proxy}
 		if len(claude) > 0 {
 			o.Claude = claude
 		}

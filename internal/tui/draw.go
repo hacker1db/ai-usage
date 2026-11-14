@@ -35,7 +35,7 @@ func Draw(d *view.Dashboard, th Theme, w int, st Status) Frame {
 		b.Text("No usage for this tab yet.", th.Muted())
 	}
 	sections := []func(*Doc, *view.Dashboard, Theme){
-		drawHero, drawCumulative, drawStack, drawCards, drawHeat, drawMix, drawTop, drawOwnership,
+		drawHero, drawCosts, drawCumulative, drawStack, drawCards, drawHeat, drawMix, drawTop, drawOwnership,
 		drawProjects, drawSessions, drawModels, drawSources,
 	}
 	for _, s := range sections {
@@ -751,11 +751,13 @@ func drawModels(doc *Doc, d *view.Dashboard, th Theme) {
 	if doc.W < 110 {
 		numW = 8
 	}
-	modelW := max(doc.W-profW-numW*len(cols), 10)
+	costW := 11
+	modelW := max(doc.W-profW-numW*len(cols)-costW, 10)
 	h := new(B).T(PadRight("Profile", profW), th.Muted()).T(PadRight("Model", modelW), th.Muted())
 	for _, c := range cols {
 		h.T(PadLeft(c.name, numW), th.Muted())
 	}
+	h.T(PadLeft("API price", costW), th.Muted())
 	doc.Add(h)
 	for _, m := range d.Models {
 		b := new(B).C('█', Style{FG: th.Series(m.Group.Slot)}).Sp(1).T(PadRight(m.Group.Label, profW-2), th.Secondary()).
@@ -763,6 +765,11 @@ func drawModels(doc *Doc, d *view.Dashboard, th Theme) {
 		for _, c := range cols {
 			b.T(PadLeft(view.Compact(float64(c.get(m))), numW), th.Secondary())
 		}
+		cost := "—"
+		if m.Priced {
+			cost = view.Money(m.Cost, "USD")
+		}
+		b.T(PadLeft(cost, costW), th.Secondary())
 		doc.Add(b)
 	}
 }
@@ -788,10 +795,18 @@ func drawSources(doc *Doc, d *view.Dashboard, th Theme) {
 
 // wrap word-wraps text to the document width.
 func wrap(doc *Doc, text string, st Style) {
+	for _, l := range wrapLines(text, doc.W) {
+		doc.Text(l, st)
+	}
+}
+
+// wrapLines splits text into lines of at most w columns at word boundaries.
+func wrapLines(text string, w int) []string {
+	var out []string
 	line := ""
 	for _, word := range strings.Fields(text) {
-		if line != "" && Width(line)+1+Width(word) > doc.W {
-			doc.Text(line, st)
+		if line != "" && Width(line)+1+Width(word) > w {
+			out = append(out, line)
 			line = ""
 		}
 		if line != "" {
@@ -800,6 +815,126 @@ func wrap(doc *Doc, text string, st Style) {
 		line += word
 	}
 	if line != "" {
-		doc.Text(Truncate(line, doc.W), st)
+		out = append(out, Truncate(line, w))
 	}
+	return out
+}
+
+func drawCosts(doc *Doc, d *view.Dashboard, th Theme) {
+	c := d.Costs
+	section(doc, th, "Costs", c.Sub)
+	if !c.Configured {
+		wrap(doc, c.Hint, th.Muted())
+	}
+	if len(c.MonthTotal) > 0 {
+		doc.Add(new(B).T(PadRight(c.Month+" so far", min(46, max(doc.W-64, 22))), th.Primary()).
+			T(view.JoinAmounts(c.MonthTotal), Style{FG: th.Ink.Primary, Bold: true}).
+			T("  all accounts, per currency", th.Muted()))
+	}
+	nameW := min(44, max(doc.W-66, 20))
+	sparkW := min(31, max(doc.W-nameW-34, 4))
+	for _, r := range c.Rows {
+		name := r.Label + " · " + r.MonthName
+		if r.Mode != "" {
+			name += " · " + r.Mode
+		}
+		b := new(B).C('●', th.Status(string(r.Level))).Sp(1).T(PadRight(Truncate(name, nameW-1), nameW), th.Primary()).
+			T(PadRight(r.Headline(), 14), Style{FG: th.Ink.Primary, Bold: true})
+		if r.Projected != nil {
+			b.T(PadRight("→ "+r.Projected.String()+" proj.", 18), th.Secondary())
+		} else {
+			b.Sp(18)
+		}
+		if len(r.Daily) > 0 {
+			for _, ch := range Spark(r.Daily, sparkW) {
+				b.C(ch, Style{FG: th.Series(r.Slot)})
+			}
+		}
+		doc.Add(b)
+		var top []string
+		for _, t := range r.Top {
+			top = append(top, t.Name+" "+view.Money(t.Value, r.Currency))
+		}
+		detail := r.Provider
+		if r.PrevName != "" {
+			detail += " · " + r.PrevName + ": " + r.Prev()
+		}
+		if len(r.Totals) > 0 && r.Local != nil {
+			detail += " · local log ≈" + r.Local.String()
+		}
+		if len(top) > 0 {
+			detail += " · " + strings.Join(top, " · ")
+		}
+		doc.Add(new(B).Sp(2).T(Truncate(detail, doc.W-2), th.Secondary()))
+		for i, l := range wrapLines(r.Status, doc.W-4) {
+			icon := "  "
+			if i == 0 {
+				icon = r.Level.Icon() + " "
+			}
+			doc.Add(new(B).Sp(2).T(icon, th.Status(string(r.Level))).T(Truncate(l, doc.W-4), th.Muted()))
+		}
+		if r.Fix != "" {
+			for i, l := range wrapLines(r.Fix, doc.W-11) {
+				lead := "    run: "
+				if i > 0 {
+					lead = "         "
+				}
+				doc.Add(new(B).T(lead, th.Status("warning")).T(Truncate(l, doc.W-9), th.Primary()))
+			}
+		}
+	}
+	if len(c.Rows) > 0 {
+		wrap(doc, "Azure: ActualCost PreTaxCost for the configured resources. Copilot: net metered usage after discounts, excluding seats and taxes. Provider data lags and may be adjusted; not an invoice.", th.Muted())
+	}
+	if c.Warning != "" {
+		doc.Add(new(B).T("! ", th.Status("warning")).T(Truncate(c.Warning, doc.W-2), th.Secondary()))
+	}
+	drawAPICost(doc, d, th)
+}
+
+func drawAPICost(doc *Doc, d *view.Dashboard, th Theme) {
+	a := d.APICost
+	doc.Add(new(B))
+	doc.Add(new(B).T("Usage at API prices", Style{FG: th.Ink.Primary, Bold: true}).T("  "+Truncate(a.Sub, max(doc.W-22, 10)), th.Muted()))
+	if len(a.Rows) == 0 {
+		doc.Add(new(B).Sp(2).T("No priced token usage in this tab and range.", th.Muted()))
+		return
+	}
+	nameW := min(28, max(doc.W-60, 14))
+	prev := a.PrevName
+	if a.PrevPartial != "" {
+		prev += "*"
+	}
+	doc.Add(new(B).Sp(2).T(PadRight("Profile", nameW), th.Muted()).T(PadLeft("Range", 12), th.Muted()).
+		T(PadLeft(a.MonthName+" MTD", 12), th.Muted()).T(PadLeft("Projected", 12), th.Muted()).T(PadLeft(prev, 12), th.Muted()))
+	line := func(name string, slot int, r, m, p, pv float64, bold bool) {
+		st := th.Primary()
+		if bold {
+			st = Style{FG: th.Ink.Primary, Bold: true}
+		}
+		proj := "—"
+		if p > 0 {
+			proj = view.Money(p, "USD")
+		}
+		b := new(B).Sp(2)
+		if slot >= 0 {
+			b.C('■', Style{FG: th.Series(slot)}).Sp(1).T(PadRight(Truncate(name, nameW-2), nameW-2), st)
+		} else {
+			b.T(PadRight(name, nameW), st)
+		}
+		doc.Add(b.T(PadLeft(view.Money(r, "USD"), 12), st).T(PadLeft(view.Money(m, "USD"), 12), st).
+			T(PadLeft(proj, 12), st).T(PadLeft(view.Money(pv, "USD"), 12), st))
+	}
+	for _, r := range a.Rows {
+		line(r.Group.Label, r.Group.Slot, r.Range, r.Month, r.Projected, r.PrevMonth, false)
+	}
+	line("Total", -1, a.Range, a.Month, a.Projected, a.PrevMonth, true)
+	note := "Standard pay-as-you-go API rates as of " + a.AsOf + "; Copilot from its logged AI credits at $0.01. Subscriptions are flat-rate, so for those profiles this is value used, not money spent."
+	if a.PrevPartial != "" {
+		note += " *" + a.PrevName + " " + a.PrevPartial + "."
+	}
+	if len(a.Unpriced) > 0 {
+		note += " No public price for: " + a.UnpricedList() + "."
+	}
+	wrap(doc, note, th.Muted())
 }

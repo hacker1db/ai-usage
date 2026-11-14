@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"ai-usage/internal/billing"
 	"ai-usage/internal/budget"
 	"ai-usage/internal/history"
 	"ai-usage/internal/ownership"
@@ -43,6 +44,7 @@ type Meta struct {
 	HistorySince    string    `json:"history_since"`
 	HistoryWarning  string    `json:"history_warning"`
 	WorkReportDir   string    `json:"work_report_dir"`
+	BillingWarning  string    `json:"billing_warning,omitempty"`
 	Ownership       Ownership `json:"ownership"`
 }
 
@@ -66,6 +68,9 @@ type Snapshot struct {
 	Rows       []history.HourRow        `json:"rows"`
 	Sessions   []usage.SessionRow       `json:"sessions"`
 	WorkReport *workreport.Report       `json:"work_report"`
+	// Costs are provider-reported billing (Azure Cost Management, GitHub billing), one entry per
+	// configured account and month. They are never derived from or added to token counts.
+	Costs []billing.Status `json:"costs,omitempty"`
 }
 
 // Options configure a Collector.
@@ -79,6 +84,11 @@ type Options struct {
 	WorkReportDir string
 	ProjectsPath  string // ownership rules (projects.yaml)
 	Logger        *slog.Logger
+	BillingRun    billing.Run // provider CLI runner for billing queries (nil = az / gh)
+	// BillingCache is the billing state shared by every ai-usage process ("" = memory only). It is
+	// written even when the history store is read-only, so the TUI and the dashboard share one
+	// query schedule and stay inside provider rate limits.
+	BillingCache string
 }
 
 // Collector rebuilds the snapshot on a timer or on request.
@@ -97,6 +107,7 @@ type Collector struct {
 	once  sync.Once
 	owner *ownership.Classifier
 	types *ownership.Types // GitHub user-or-org answers, cached next to the history store
+	costs *costs
 }
 
 // New returns a collector; call Run to start collecting.
@@ -112,14 +123,21 @@ func New(o Options) *Collector {
 	if o.HistoryPath != "" && !o.ReadOnly {
 		typesPath = filepath.Join(filepath.Dir(o.HistoryPath), "owners.json")
 	}
-	return &Collector{opts: o, caches: sources.NewCaches(), history: history.Open(o.HistoryPath, o.ReadOnly),
-		wake: make(chan struct{}, 1), ready: make(chan struct{}), types: ownership.NewTypes(typesPath)}
+	c := &Collector{opts: o, caches: sources.NewCaches(), history: history.Open(o.HistoryPath, o.ReadOnly),
+		wake: make(chan struct{}, 1), ready: make(chan struct{}), types: ownership.NewTypes(typesPath),
+		costs: newCosts(o.BillingRun, o.ConfigPath, func() []string { return sources.FoundryEndpoints(o.Sources) },
+			func(endpoints []string) []billing.Account {
+				return billing.AutoAccounts(endpoints, sources.CopilotUsed(o.Sources), billing.OnPath)
+			})}
+	c.costs.cache = o.BillingCache
+	return c
 }
 
 // Run collects immediately, then on every interval or Wake, until ctx ends.
 func (c *Collector) Run(ctx context.Context) {
 	t := time.NewTicker(c.opts.Interval)
 	defer t.Stop()
+	go c.costs.loop(ctx, c.Wake)
 	for {
 		c.Refresh()
 		select {
@@ -211,6 +229,7 @@ func (c *Collector) build(now time.Time) (*Snapshot, error) {
 		}
 	}
 	budgets, budgetWarn := budget.Load(o.ConfigPath)
+	costs, costWarn := c.costs.current()
 	_, cfgErr := os.Stat(o.ConfigPath)
 	histRows, histSince := c.history.Stats()
 	// Rules are reread every collection, so editing projects.yaml applies on the next refresh.
@@ -232,6 +251,7 @@ func (c *Collector) build(now time.Time) (*Snapshot, error) {
 			ConfigError: budgetWarn, CacheHits: stats.Hits, CacheMisses: stats.Misses,
 			History: tildeOr(o.HistoryPath), HistoryRows: histRows, HistoryOnlyRows: kept, HistorySince: histSince,
 			HistoryWarning: c.history.Warning, WorkReportDir: tildeOr(o.WorkReportDir),
+			BillingWarning: costWarn,
 			Ownership: Ownership{Source: cls.Source, Auto: cls.Auto, Labels: cls.Labels, Default: cls.Default,
 				Warning: cls.Warning, Profiles: cls.Profiles},
 		},
@@ -241,6 +261,7 @@ func (c *Collector) build(now time.Time) (*Snapshot, error) {
 		Rows:       c.history.Since(firstHour),
 		Sessions:   sessions,
 		WorkReport: workreport.Load(o.WorkReportDir),
+		Costs:      costs,
 	}, nil
 }
 

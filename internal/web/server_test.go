@@ -1,6 +1,8 @@
 package web
 
 import (
+	"ai-usage/internal/billing"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -42,6 +44,13 @@ func fixture(now time.Time) *snapshot.Snapshot {
 				First: now.Add(-time.Hour).Format(time.RFC3339), Last: now.Format(time.RFC3339),
 				ActiveMin: 10, Requests: 5, Total: 60000, Uncached: 20000, Output: 3000, Model: "gpt-6",
 				Owner: "example-org", Class: "org"}},
+		Costs: []billing.Status{
+			{ID: "az", Label: "Foundry with a very long account label", Provider: "azure", Month: now.UTC().Format("2006-01"), Report: &billing.Report{
+				Retrieved: now, Basis: "Azure ActualCost", Items: []billing.Item{
+					{Date: now.UTC().Format("2006-01") + "-01", Resource: "/s/accounts/foundry", Currency: "USD", Net: json.Number("12.5")}}}},
+			{ID: "cp", Label: "Copilot · me", Provider: "copilot", Mode: "ai_credit", Month: now.UTC().Format("2006-01"),
+				Error: "gh billing request failed: gh: Not Found (HTTP 404) gh: This API operation needs the \"user\" scope", Fix: "gh auth refresh -h github.com -s user"},
+		},
 	}
 }
 
@@ -77,6 +86,13 @@ func TestTemplatesRender(t *testing.T) {
 		body := rec.Body.String()
 		if rec.Code != 200 {
 			t.Fatalf("%+v: status %d: %s", f, rec.Code, body)
+		}
+		if !strings.Contains(body, `id="costs"`) || !strings.Contains(body, "$12.50") || !strings.Contains(body, "gh billing request failed") ||
+			!strings.Contains(body, "<code>gh auth refresh -h github.com -s user</code>") {
+			t.Errorf("costs section missing")
+		}
+		if !strings.Contains(body, "Usage at API prices") {
+			t.Errorf("API price estimate missing")
 		}
 		if strings.Contains(body, "<b>Fix") {
 			t.Errorf("session title was not escaped")

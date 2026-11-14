@@ -1,6 +1,11 @@
 package tui
 
 import (
+	"ai-usage/internal/billing"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -117,6 +122,13 @@ func fixture(now time.Time) *snapshot.Snapshot {
 		Columns:  history.Columns,
 		Rows:     rows,
 		Sessions: sess,
+		Costs: []billing.Status{
+			{ID: "az", Label: "Foundry with a very long account label", Provider: "azure", Month: now.UTC().Format("2006-01"), Report: &billing.Report{
+				Retrieved: now, Basis: "Azure ActualCost", Items: []billing.Item{
+					{Date: now.UTC().Format("2006-01") + "-01", Resource: "/s/accounts/foundry", Currency: "USD", Net: json.Number("12.5")}}}},
+			{ID: "cp", Label: "Copilot · me", Provider: "copilot", Mode: "ai_credit", Month: now.UTC().Format("2006-01"),
+				Error: "gh billing request failed: gh: Not Found (HTTP 404) gh: This API operation needs the \"user\" scope", Fix: "gh auth refresh -h github.com -s user"},
+		},
 	}
 }
 
@@ -153,7 +165,7 @@ func TestSectionsPresent(t *testing.T) {
 	}
 	all := frame(view.Defaults)
 	for _, want := range []string{"Token usage", "Cumulative tokens", "Usage by profile", "Profiles", "When you work",
-		"Token mix", "Where the tokens went", "Projects", "Sessions", "Models", "Sources", "✕ Over budget", "! not found"} {
+		"Token mix", "Where the tokens went", "Projects", "Sessions", "Models", "Sources", "✕ Over budget", "! not found", "Costs", "$12.50", "Usage at API prices", "run: gh auth refresh -h github.com -s user", "✕ gh billing request failed"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("frame is missing %q", want)
 		}
@@ -164,5 +176,18 @@ func TestSectionsPresent(t *testing.T) {
 	}
 	if claude := frame(view.Filters{Tab: "claude"}); !strings.Contains(claude, "┄ budget") || !strings.Contains(claude, "Budget used") {
 		t.Errorf("Claude tab is missing the budget line or hero budget stat")
+	}
+}
+
+// A dashboard from another version sends a snapshot this build can't read: collect locally
+// instead of showing only an error.
+func TestPickSourceFallsBackOnIncompatibleSnapshot(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"columns":["hour"],"rows":[]}`))
+	}))
+	defer srv.Close()
+	src, _ := pickSource(context.Background(), Options{URL: srv.URL, Collect: snapshot.Options{}})
+	if _, ok := src.(*localSource); !ok {
+		t.Fatalf("source = %T, want local collection", src)
 	}
 }

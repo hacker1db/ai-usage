@@ -32,15 +32,17 @@ const (
 func Slot(t time.Time) int64 { return t.Unix() / (SlotMinutes * 60) }
 
 // Metrics are the token counters of a row. Input includes cached and cache-write tokens for every
-// tool, so Total = Input + Output. Reasoning is a subset of Output.
+// tool, so Total = Input + Output. Reasoning is a subset of Output, and CacheWrite1h (Claude's
+// 1-hour cache TTL, priced higher than the 5-minute default) is a subset of CacheWrite.
 type Metrics struct {
-	Requests   int64 `json:"requests"`
-	Input      int64 `json:"input"`
-	Cached     int64 `json:"cached"`
-	CacheWrite int64 `json:"cache_write"`
-	Output     int64 `json:"output"`
-	Reasoning  int64 `json:"reasoning"`
-	Total      int64 `json:"total"`
+	Requests     int64 `json:"requests"`
+	Input        int64 `json:"input"`
+	Cached       int64 `json:"cached"`
+	CacheWrite   int64 `json:"cache_write"`
+	Output       int64 `json:"output"`
+	Reasoning    int64 `json:"reasoning"`
+	Total        int64 `json:"total"`
+	CacheWrite1h int64 `json:"cache_write_1h"`
 }
 
 // Add accumulates o into m.
@@ -52,6 +54,7 @@ func (m *Metrics) Add(o Metrics) {
 	m.Output += o.Output
 	m.Reasoning += o.Reasoning
 	m.Total += o.Total
+	m.CacheWrite1h += o.CacheWrite1h
 }
 
 // Uncached is input that wasn't a cache read, plus output.
@@ -65,9 +68,11 @@ type Record struct {
 	Input      int64  // includes cached and cache-write tokens
 	Cached     int64
 	CacheWrite int64
-	Output     int64
-	Reasoning  int64
-	CopilotAIU float64
+	// CacheWrite1h is the part of CacheWrite written with a 1-hour TTL.
+	CacheWrite1h int64
+	Output       int64
+	Reasoning    int64
+	CopilotAIU   float64
 }
 
 // Granularity is the row bucket size.
@@ -176,7 +181,7 @@ func (a *Aggregator) Add(tool, profile string, r Record) bool {
 		a.rows[k] = acc
 	}
 	acc.m.Add(Metrics{Requests: 1, Input: r.Input, Cached: r.Cached, CacheWrite: r.CacheWrite,
-		Output: r.Output, Reasoning: r.Reasoning, Total: r.Input + r.Output})
+		CacheWrite1h: r.CacheWrite1h, Output: r.Output, Reasoning: r.Reasoning, Total: r.Input + r.Output})
 	acc.aiu += r.CopilotAIU
 	if r.Session != "" {
 		sk := SessionKey{tool, profile, r.Session}

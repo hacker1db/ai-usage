@@ -39,13 +39,13 @@ func runServe(args []string) error {
 		return fmt.Errorf("-host %q must be a loopback address", *host)
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	histPath := paths.HistoryFile(*dataDir)
+	histPath, billingCache := paths.HistoryFile(*dataDir), paths.BillingCacheFile(*dataDir)
 	if *noHistory {
-		histPath = ""
+		histPath, billingCache = "", ""
 	}
 	workDir := paths.WorkReportDir(*dataDir)
 	c := snapshot.New(snapshot.Options{Days: *days, Interval: *interval, Sources: opts(), ConfigPath: *config,
-		HistoryPath: histPath, WorkReportDir: workDir, ProjectsPath: *projects, Logger: log})
+		HistoryPath: histPath, WorkReportDir: workDir, ProjectsPath: *projects, Logger: log, BillingCache: billingCache})
 	h, err := web.New(c, *port, workDir, log)
 	if err != nil {
 		return err
