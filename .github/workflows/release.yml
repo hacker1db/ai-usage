@@ -1,0 +1,111 @@
+name: release
+
+# On every push to main: run the checks, cut the next semantic version from the Conventional
+# Commits since the last tag, publish a GitHub release, and tell hacker1db/homebrew-tap to update
+# the ai-usage and foundry-entra-proxy formulas. Version policy and credential setup: README.md,
+# "Releases".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Bump to apply instead of the one computed from commits
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+
+# One release at a time, in push order. A run that is still pending when a newer push arrives is
+# replaced by it; the newer run releases everything the older one would have.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::releases are cut from main only (got $GITHUB_REF)"
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Plan
+        id: plan
+        env:
+          BUMP: ${{ inputs.bump || 'auto' }}
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+          go run ./scripts/nextversion -rev "$GITHUB_SHA" -bump "$BUMP" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        if: steps.plan.outputs.action == 'create' || steps.plan.outputs.action == 'existing'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTION: ${{ steps.plan.outputs.action }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          PREVIOUS: ${{ steps.plan.outputs.previous }}
+          COMMIT: ${{ steps.plan.outputs.commit }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --json tagName >/dev/null 2>&1; then
+            echo "release $TAG already exists"
+            exit 0
+          fi
+          if [ "$ACTION" = existing ]; then
+            # A tag pushed by hand (for example SSH-signed); keep it and publish its release.
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          else
+            gh release create "$TAG" --target "$COMMIT" --title "$TAG" --generate-notes --notes-start-tag "$PREVIOUS"
+          fi
+
+      - name: Notify homebrew-tap
+        if: steps.plan.outputs.action == 'create' || steps.plan.outputs.action == 'existing'
+        env:
+          GH_TOKEN: ${{ secrets.TAP_DISPATCH_TOKEN }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning title=homebrew-tap not notified::TAP_DISPATCH_TOKEN is not set; the tap picks up $TAG on its six-hour poll."
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            if gh api --method POST repos/hacker1db/homebrew-tap/dispatches \
+                -f event_type=ai-usage-release -f "client_payload[tag]=$TAG" >/dev/null; then
+              echo "dispatched ai-usage-release for $TAG"
+              exit 0
+            fi
+            echo "dispatch attempt $attempt failed"
+            sleep $((attempt * 10))
+          done
+          echo "::error title=homebrew-tap not notified::dispatch failed; check TAP_DISPATCH_TOKEN. The tap's six-hour poll still picks up $TAG."
+          exit 1
+
+      - name: Summary
+        if: always()
+        env:
+          ACTION: ${{ steps.plan.outputs.action }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          REASON: ${{ steps.plan.outputs.reason }}
+        run: |
+          printf '### release: %s %s\n\n%s\n' "${ACTION:-failed}" "$TAG" "$REASON" >> "$GITHUB_STEP_SUMMARY"
