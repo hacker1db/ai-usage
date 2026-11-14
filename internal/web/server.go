@@ -216,19 +216,21 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 }
 
 var funcs = template.FuncMap{
-	"compact":  view.Compact,
-	"exact":    view.Exact,
-	"compacti": func(n int64) string { return view.Compact(float64(n)) },
-	"exacti":   func(n any) string { return view.Exact(toFloat(n)) },
-	"pct":      view.Pct,
-	"dur":      func(min any) string { return view.Duration(toFloat(min)) },
-	"when":     view.WhenLabel,
-	"whenStr":  func(s string) string { return view.WhenLabel(usage.ParseTime(s).Local()) },
-	"dayStr":   func(s string) string { return view.DayLabel(usage.ParseTime(s).Local()) },
-	"shortday": view.ShortDay,
-	"add":      func(a, b int) int { return a + b },
-	"mod":      func(a, b int) int { return a % b },
-	"pchip":    func(o view.ProfileOpt, f view.Filters) map[string]any { return map[string]any{"O": o, "F": f} },
+	"compact":     view.Compact,
+	"money":       view.Money,
+	"joinAmounts": view.JoinAmounts,
+	"exact":       view.Exact,
+	"compacti":    func(n int64) string { return view.Compact(float64(n)) },
+	"exacti":      func(n any) string { return view.Exact(toFloat(n)) },
+	"pct":         view.Pct,
+	"dur":         func(min any) string { return view.Duration(toFloat(min)) },
+	"when":        view.WhenLabel,
+	"whenStr":     func(s string) string { return view.WhenLabel(usage.ParseTime(s).Local()) },
+	"dayStr":      func(s string) string { return view.DayLabel(usage.ParseTime(s).Local()) },
+	"shortday":    view.ShortDay,
+	"add":         func(a, b int) int { return a + b },
+	"mod":         func(a, b int) int { return a % b },
+	"pchip":       func(o view.ProfileOpt, f view.Filters) map[string]any { return map[string]any{"O": o, "F": f} },
 	"memberLabels": func(gs []view.Group) string {
 		names := make([]string, len(gs))
 		for i, g := range gs {

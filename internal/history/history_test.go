@@ -65,3 +65,31 @@ func TestReadOnlyNeverWrites(t *testing.T) {
 		t.Fatalf("read-only store wrote %s", path)
 	}
 }
+
+// A store in the layout before cache_write_1h loads, and the next save upgrades it in place.
+func TestUpgradesLegacyLayoutWithoutLosingRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hourly.json")
+	if err := os.WriteFile(path, []byte(pythonStore), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Open(path, false)
+	row := s.Since("2026-11-07T00:00")[0]
+	if row.CacheWrite1h != 0 {
+		t.Fatalf("legacy row CacheWrite1h = %d", row.CacheWrite1h)
+	}
+	row.Requests, row.CacheWrite1h = 6, 30
+	if _, err := s.Merge([]HourRow{row}, nil); err != nil {
+		t.Fatal(err)
+	}
+	re := Open(path, false)
+	if re.Warning != "" {
+		t.Fatal(re.Warning)
+	}
+	got := re.Since("2026-11-07T00:00")
+	if len(got) != 1 || got[0].CacheWrite1h != 30 || got[0].Requests != 6 {
+		t.Fatalf("reloaded = %+v", got)
+	}
+	if _, ok := re.Session("claude-code|personal|s1"); !ok {
+		t.Fatal("session lost in upgrade")
+	}
+}

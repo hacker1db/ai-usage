@@ -9,6 +9,9 @@ import (
 
 func TestCopilotNetAndScope(t *testing.T) {
 	run := func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if isIdentity(args) {
+			return ghUser("someone", "read:org"), nil // org billing doesn't need the user scope
+		}
 		if name != "gh" || !strings.Contains(strings.Join(args, " "), "/organizations/example/settings/billing/ai_credit/usage?year=2026&month=11") {
 			t.Fatalf("wrong request: %s %v", name, args)
 		}
@@ -21,7 +24,12 @@ func TestCopilotNetAndScope(t *testing.T) {
 }
 func TestFailuresAreNotZero(t *testing.T) {
 	for _, body := range []string{`{}`, `{"usageItems":[{"product":"Copilot"}]}`, `bad`} {
-		_, err := Copilot(context.Background(), func(context.Context, string, ...string) ([]byte, error) { return []byte(body), nil }, "users", "me", "premium_request", "2026-11")
+		_, err := Copilot(context.Background(), func(_ context.Context, _ string, args ...string) ([]byte, error) {
+			if isIdentity(args) {
+				return ghUser("me", "user"), nil
+			}
+			return []byte(body), nil
+		}, "users", "me", "premium_request", "2026-11")
 		if err == nil {
 			t.Fatalf("accepted %s", body)
 		}
@@ -67,7 +75,7 @@ func TestAzureRejectsForeignContinuation(t *testing.T) {
 }
 func TestAzureInvalidScopeNeverRuns(t *testing.T) {
 	run := func(context.Context, string, ...string) ([]byte, error) { t.Fatal("called provider"); return nil, nil }
-	for _, ids := range [][]string{nil, {"/subscriptions/other/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/x"}} {
+	for _, ids := range [][]string{{"/subscriptions/other/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/x"}} {
 		if _, err := Azure(context.Background(), run, sub, ids, "2026-11"); err == nil {
 			t.Fatal("accepted scope")
 		}
@@ -79,4 +87,19 @@ func TestAzureMalformedRows(t *testing.T) {
 			t.Fatal(body)
 		}
 	}
+}
+
+func TestCommandKeepsDiagnostic(t *testing.T) {
+	_, err := Command(context.Background(), "sh", "-c", "echo 'gh: needs the \"user\" scope' >&2; exit 1")
+	if err == nil || !strings.Contains(err.Error(), `needs the "user" scope`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func isIdentity(args []string) bool {
+	return strings.Contains(strings.Join(args, " "), "--include /user")
+}
+
+func ghUser(login, scopes string) []byte {
+	return []byte("HTTP/2.0 200 OK\r\nX-Oauth-Scopes: " + scopes + "\r\n\r\n{\"login\":\"" + login + "\"}")
 }

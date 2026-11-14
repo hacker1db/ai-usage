@@ -50,6 +50,9 @@ type claudeUsage struct {
 	OutputTokens             usage.Int `json:"output_tokens"`
 	CacheReadInputTokens     usage.Int `json:"cache_read_input_tokens"`
 	CacheCreationInputTokens usage.Int `json:"cache_creation_input_tokens"`
+	CacheCreation            struct {
+		Ephemeral1h usage.Int `json:"ephemeral_1h_input_tokens"`
+	} `json:"cache_creation"`
 }
 
 type claudeMessage struct {
@@ -213,9 +216,11 @@ func ParseClaudeFile(path string) ClaudeFile {
 			dedupe = string(msg.ID) + "\x00" + string(e.RequestID)
 		}
 		cr, cw := int64(u.CacheReadInputTokens), int64(u.CacheCreationInputTokens)
+		cw1h := min(int64(u.CacheCreation.Ephemeral1h), cw)
 		out.records = append(out.records, claudeRecord{dedupe, usage.Record{
 			Model: string(msg.Model), Time: e.Timestamp.Time, Session: sid,
-			Input: int64(u.InputTokens) + cr + cw, Cached: cr, CacheWrite: cw, Output: int64(u.OutputTokens),
+			Input: int64(u.InputTokens) + cr + cw, Cached: cr, CacheWrite: cw, CacheWrite1h: cw1h,
+			Output: int64(u.OutputTokens),
 		}})
 	})
 	return out

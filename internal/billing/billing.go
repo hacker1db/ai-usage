@@ -4,21 +4,33 @@ package billing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
 
 type Run func(context.Context, string, ...string) ([]byte, error)
 
-// Command uses existing CLI credentials without capturing tokens or logging command output.
+// Command uses existing CLI credentials without capturing tokens or logging command output. On
+// failure it returns a *CLIError carrying the CLI's own diagnostic (stderr), which names a missing
+// scope, role, or expired login.
 func Command(ctx context.Context, name string, args ...string) ([]byte, error) {
 	b, err := exec.CommandContext(ctx, name, args...).Output()
 	if err != nil {
-		return nil, fmt.Errorf("%s billing request failed (check login, billing permissions, and provider availability): %w", name, err)
+		e := &CLIError{Name: name, Err: err}
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			e.Stderr = string(ee.Stderr)
+			if len(e.Stderr) > 4000 {
+				e.Stderr = e.Stderr[:4000]
+			}
+		}
+		return nil, e
 	}
 	return b, nil
 }
@@ -53,16 +65,37 @@ func Copilot(ctx context.Context, run Run, kind, account, mode, month string) (R
 	if err != nil {
 		return r, err
 	}
-	if (kind != "users" && kind != "organizations") || !accountRE.MatchString(account) {
-		return r, fmt.Errorf("GitHub account must be an explicit users or organizations scope and valid account name")
+	if (kind != "users" && kind != "organizations") || (account != "" && !accountRE.MatchString(account)) {
+		return r, fmt.Errorf("GitHub scope must be users or organizations, with a valid account name")
 	}
 	if mode != "ai_credit" && mode != "premium_request" {
 		return r, fmt.Errorf("GitHub mode must be ai_credit or premium_request")
 	}
+	if kind == "organizations" && account == "" {
+		return r, fmt.Errorf("organizations scope needs github_account set to the organization")
+	}
+	// Use whoever gh is logged in as, and say exactly what to run when the token can't do this.
+	login, scopes, err := ghIdentity(ctx, run)
+	if err != nil {
+		return r, err
+	}
+	if kind == "users" {
+		if account == "" {
+			account = login
+		} else if !strings.EqualFold(account, login) {
+			return r, &Error{Msg: "gh is logged in as " + login + ", but personal billing only covers the logged-in user (" + account + ")",
+				Fix: "gh auth switch -h github.com -u " + account + "   (or remove github_account to use " + login + ")"}
+		}
+		if scopes != nil && !slices.Contains(scopes, "user") {
+			return r, &Error{Msg: "the gh token for " + login + " is missing the \"user\" scope that personal billing needs",
+				Fix: "gh auth refresh -h github.com -s user"}
+		}
+	}
+	r.Account = kind + "/" + account
 	endpoint := fmt.Sprintf("/%s/%s/settings/billing/%s/usage?year=%d&month=%d", kind, account, mode, t.Year(), t.Month())
 	b, err := run(ctx, "gh", "api", "--hostname", "github.com", "--method", "GET", "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2026-03-10", endpoint)
 	if err != nil {
-		return r, err
+		return r, explainGH(err, kind, account)
 	}
 	var raw struct {
 		Items *[]struct {
@@ -98,15 +131,39 @@ func Azure(ctx context.Context, run Run, subscription string, resources []string
 	if err != nil {
 		return r, err
 	}
-	if !subscriptionRE.MatchString(subscription) || len(resources) == 0 {
-		return r, fmt.Errorf("Azure requires a subscription UUID and at least one Foundry resource ID")
+	if subscription != "" && !subscriptionRE.MatchString(subscription) {
+		return r, fmt.Errorf("Azure subscription must be a UUID")
 	}
-	prefix := "/subscriptions/" + subscription + "/resourceGroups/"
-	for _, id := range resources {
-		if !strings.HasPrefix(strings.ToLower(id), strings.ToLower(prefix)) || strings.ContainsAny(id, "?#\r\n") || !strings.Contains(strings.ToLower(id), "/providers/microsoft.cognitiveservices/accounts/") {
-			return r, fmt.Errorf("resource must be a Microsoft.CognitiveServices account in the selected subscription")
+	if subscription == "" && len(resources) > 0 {
+		return r, fmt.Errorf("Azure resources need their subscription set too")
+	}
+	checkResources := func() error {
+		prefix := "/subscriptions/" + subscription + "/resourceGroups/"
+		for _, id := range resources {
+			if !strings.HasPrefix(strings.ToLower(id), strings.ToLower(prefix)) || strings.ContainsAny(id, "?#\r\n") || !strings.Contains(strings.ToLower(id), "/providers/microsoft.cognitiveservices/accounts/") {
+				return fmt.Errorf("resource must be a Microsoft.CognitiveServices account in the selected subscription")
+			}
+		}
+		return nil
+	}
+	if err := checkResources(); err != nil {
+		return r, err
+	}
+	// Default to the Azure CLI's current subscription and every Foundry account in it.
+	if subscription == "" {
+		if subscription, err = azSubscription(ctx, run); err != nil {
+			return r, err
 		}
 	}
+	if len(resources) == 0 {
+		if resources, err = azResources(ctx, run, subscription); err != nil {
+			return r, err
+		}
+		if err := checkResources(); err != nil {
+			return r, err
+		}
+	}
+	r.Account = subscription
 	body, _ := json.Marshal(map[string]any{"type": "ActualCost", "timeframe": "Custom", "timePeriod": map[string]string{"from": t.Format(time.RFC3339), "to": t.AddDate(0, 1, 0).Add(-time.Second).Format(time.RFC3339)}, "dataset": map[string]any{"granularity": "Daily", "aggregation": map[string]any{"totalCost": map[string]string{"name": "PreTaxCost", "function": "Sum"}}, "grouping": []map[string]string{{"type": "Dimension", "name": "ResourceId"}}, "filter": map[string]any{"dimensions": map[string]any{"name": "ResourceId", "operator": "In", "values": resources}}}})
 	endpoint := "https://management.azure.com/subscriptions/" + subscription + "/providers/Microsoft.CostManagement/query?api-version=2026-06-01"
 	seen := map[string]bool{}
@@ -121,7 +178,7 @@ func Azure(ctx context.Context, run Run, subscription string, resources []string
 		seen[endpoint] = true
 		b, e := run(ctx, "az", "rest", "--method", "post", "--url", endpoint, "--body", string(body), "--subscription", subscription, "--output", "json", "--only-show-errors")
 		if e != nil {
-			return r, e
+			return r, explainAz(e, subscription)
 		}
 		if len(strings.TrimSpace(string(b))) == 0 {
 			break

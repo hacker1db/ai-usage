@@ -80,3 +80,12 @@ func TestCodexCumulativeTokenCountsAreDiffed(t *testing.T) {
 		t.Fatalf("status %+v rows %+v", st, rows)
 	}
 }
+
+func TestCodexHomesIncludesExtrasOnce(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	o := Options{CodexHome: a, CodexExtra: []string{b, a, ""}}
+	if got := o.CodexHomes(); len(got) != 2 || got[0] != a || got[1] != b {
+		t.Fatalf("%v", got)
+	}
+}

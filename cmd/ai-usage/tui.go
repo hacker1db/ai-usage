@@ -72,8 +72,8 @@ func runTUI(args []string) error {
 		Collect: snapshot.Options{
 			Days: *days, Interval: *interval, Sources: opts(), ConfigPath: *config,
 			HistoryPath: paths.HistoryFile(*dataDir), ReadOnly: true, WorkReportDir: paths.WorkReportDir(*dataDir),
-			ProjectsPath: *projects,
-			Logger:       slog.New(slog.DiscardHandler),
+			ProjectsPath: *projects, BillingCache: paths.BillingCacheFile(*dataDir),
+			Logger: slog.New(slog.DiscardHandler),
 		},
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

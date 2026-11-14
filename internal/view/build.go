@@ -11,6 +11,7 @@ import (
 	"ai-usage/internal/budget"
 	"ai-usage/internal/history"
 	"ai-usage/internal/ownership"
+	"ai-usage/internal/pricing"
 	"ai-usage/internal/snapshot"
 	"ai-usage/internal/usage"
 	"ai-usage/internal/workreport"
@@ -222,11 +223,13 @@ type Ownership struct {
 	Warning string
 }
 
-// ModelRow is a profile/model pair's counters in range.
+// ModelRow is a profile/model pair's counters in range, with their cost at public API prices.
 type ModelRow struct {
 	Group Group
 	Model string
 	usage.Metrics
+	Cost   float64
+	Priced bool
 }
 
 // Theme is a workstream row.
@@ -303,6 +306,8 @@ type Dashboard struct {
 	Models      []ModelRow
 	Work        Workstreams
 	Sources     Sources
+	Costs       Costs
+	APICost     APICost
 	Foot        []string
 	Empty       bool
 	Profiles    []ProfileOpt // filter choices: configured sets, then single profiles with data
@@ -338,6 +343,17 @@ func (o ProfileOpt) Slot() int {
 		return -1
 	}
 	return o.Members[0].Slot
+}
+
+// apiCost prices rows since from at public API rates (unknown models count as 0).
+func apiCost(rows []history.HourRow, from time.Time) float64 {
+	var e pricing.Estimate
+	for _, r := range rows {
+		if !r.T.Before(from) && priced(r) {
+			addRow(&e, r)
+		}
+	}
+	return e.USD
 }
 
 func floorHour(t time.Time) time.Time {
@@ -406,6 +422,7 @@ func Build(s *snapshot.Snapshot, f Filters, now time.Time) Dashboard {
 	d.buildHeat(rows)
 	d.buildMix(rows, from)
 	d.buildModels(rows, from)
+	d.buildAPICost(s, rows, from, now)
 	sessions := d.sessionsInRange(s, from)
 	d.buildTop(sessions, rows, from)
 	work := d.buildOwnership(s, sessions)
@@ -413,6 +430,7 @@ func Build(s *snapshot.Snapshot, f Filters, now time.Time) Dashboard {
 	d.buildSessions(s, work)
 	d.buildWork(s, work)
 	d.buildSources(s, from)
+	d.buildCosts(s, now)
 	cfg := "No budgets set (see dashboard.example.json)"
 	if s.Meta.ConfigExists {
 		cfg = "Budgets: " + s.Meta.Config
@@ -549,6 +567,7 @@ func (d *Dashboard) buildHero(s *snapshot.Snapshot, rows []history.HourRow, keys
 		{"Burn, last " + d.Burn.Label, Compact(burn) + "/h"},
 		{period, Compact(toDate)},
 		{"Projected by " + ShortDay(end.Add(-time.Second)), Compact(projected)},
+		{"API price, last " + d.Range.Label, Money(apiCost(rows, from), "USD")},
 	}
 	if b != nil {
 		pct := toDate / float64(b.Tokens) * 100
@@ -790,6 +809,14 @@ func (d *Dashboard) buildModels(rows []history.HourRow, from time.Time) {
 			by[k] = m
 		}
 		m.Metrics.Add(r.Metrics)
+		if priced(r) {
+			var e pricing.Estimate
+			addRow(&e, r)
+			if e.Priced > 0 || len(e.Unpriced) == 0 {
+				m.Cost += e.USD
+				m.Priced = m.Priced || e.Priced > 0
+			}
+		}
 	}
 	for _, m := range by {
 		d.Models = append(d.Models, *m)

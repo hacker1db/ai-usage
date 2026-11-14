@@ -38,6 +38,9 @@ func ProjectsFile() string {
 	return filepath.Join(usage.Home, ".config", "ai-usage", "projects.yaml")
 }
 
+// BillingCacheFile is the billing state shared by every ai-usage process inside a data dir.
+func BillingCacheFile(dataDir string) string { return filepath.Join(dataDir, "billing.json") }
+
 // HistoryFile is the hourly history store inside a data dir.
 func HistoryFile(dataDir string) string { return filepath.Join(dataDir, "hourly.json") }
 

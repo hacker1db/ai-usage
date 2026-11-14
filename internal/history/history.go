@@ -22,7 +22,11 @@ import (
 
 // Columns is the row layout of the store and of the /api/usage snapshot.
 var Columns = []string{"hour", "tool", "profile", "model", "requests", "input", "cached", "cache_write",
-	"output", "reasoning", "total", "sessions", "copilot_aiu"}
+	"output", "reasoning", "total", "sessions", "copilot_aiu", "cache_write_1h"}
+
+// legacyColumns is the layout before cache_write_1h; stores in it load with that column at 0 and
+// are rewritten in the current layout on the next save.
+var legacyColumns = Columns[:13]
 
 // HourRow is one (local hour, tool, profile, model) row, stored as a JSON array in Columns order.
 type HourRow struct {
@@ -56,7 +60,7 @@ func parseHour(s string) time.Time {
 
 func (r HourRow) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]any{r.Hour, r.Tool, r.Profile, r.Model, r.Requests, r.Input, r.Cached, r.CacheWrite,
-		r.Output, r.Reasoning, r.Total, r.Sessions, r.CopilotAIU})
+		r.Output, r.Reasoning, r.Total, r.Sessions, r.CopilotAIU, r.CacheWrite1h})
 }
 
 func (r *HourRow) UnmarshalJSON(b []byte) error {
@@ -64,7 +68,7 @@ func (r *HourRow) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &a); err != nil {
 		return err
 	}
-	if len(a) != len(Columns) {
+	if len(a) != len(Columns) && len(a) != len(legacyColumns) {
 		return fmt.Errorf("history row has %d columns, want %d", len(a), len(Columns))
 	}
 	strs := []*string{&r.Hour, &r.Tool, &r.Profile, &r.Model}
@@ -85,6 +89,12 @@ func (r *HourRow) UnmarshalJSON(b []byte) error {
 	var f usage.Float
 	_ = f.UnmarshalJSON(a[12])
 	r.CopilotAIU = float64(f)
+	r.CacheWrite1h = 0
+	if len(a) > 13 {
+		var n usage.Int
+		_ = n.UnmarshalJSON(a[13])
+		r.CacheWrite1h = int64(n)
+	}
 	r.T = parseHour(r.Hour)
 	return nil
 }
@@ -123,7 +133,7 @@ func Open(path string, readOnly bool) *Store {
 	switch {
 	case err != nil:
 		s.Warning = fmt.Sprintf("could not read %s: %v; starting fresh", usage.Tilde(path), err)
-	case !slices.Equal(f.Columns, Columns):
+	case !slices.Equal(f.Columns, Columns) && !slices.Equal(f.Columns, legacyColumns):
 		s.Warning = fmt.Sprintf("column layout changed in %s; starting fresh", usage.Tilde(path))
 	default:
 		for _, r := range f.Rows {
