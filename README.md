@@ -310,3 +310,62 @@ rate limit is only shown when there is no data yet. Results and back-off live in
 in the data folder, shared under a file lock, so restarts, `tui -local`, and a second dashboard
 reuse fresh results instead of querying again. Costs are not filtered by tab or profile and are
 never added to token counts.
+
+## Releases
+
+Every push to `main` runs [`release.yml`](.github/workflows/release.yml): the same `make check` as
+pull requests ([`ci.yml`](.github/workflows/ci.yml)), then a release decision made by
+[`scripts/nextversion`](scripts/nextversion/main.go) from the commits since the newest `vX.Y.Z`
+tag. Install with `brew install hacker1db/tap/ai-usage hacker1db/tap/foundry-entra-proxy`; both
+formulas build from the same release tarball.
+
+### Version policy
+
+Versions are `vMAJOR.MINOR.PATCH` with no pre-release suffixes. The bump is the largest one any
+non-merge commit since the last tag asks for, read from its [Conventional Commits](https://www.conventionalcommits.org/)
+header and footers:
+
+| Commits since the last tag | Bump | Example from `v0.2.0` |
+|---|---|---|
+| `type!:` or a `BREAKING CHANGE:` footer | major; minor while the major version is 0 | `v0.3.0` (`v2.0.0` from `v1.4.2`) |
+| `feat:` | minor | `v0.3.0` |
+| `fix:`, `perf:`, `refactor:`, `build:`, `revert:`, and messages that are not Conventional Commits | patch | `v0.2.1` |
+| only `docs:`, `chore:`, `ci:`, `test:`, `style:` | no release | |
+
+With squash merges the pull request title is the commit message, so title PRs accordingly.
+Run the `release` workflow by hand (Actions, `release`, Run workflow) with `bump` set to `patch`,
+`minor`, or `major` to release when the commits would not, or to choose the bump.
+
+The run is idempotent and serialized:
+
+- One `release` run at a time; a pending run is replaced by a newer push, which covers it.
+- A commit that already carries a version tag is never tagged again. If you push a tag by hand
+  (for example one signed with `git tag -s`), the workflow publishes that tag's release and
+  notifies the tap instead of cutting a new version. Tags the workflow creates are lightweight
+  tags made through the GitHub API, so they are not signed.
+- Re-running an old run after newer releases exist does nothing (`superseded`).
+- If the release exists already, publishing is skipped and the tap is notified again; the tap
+  ignores versions it already has.
+
+### Homebrew tap notification
+
+After publishing, the workflow sends a `repository_dispatch` (`ai-usage-release`) to
+[hacker1db/homebrew-tap](https://github.com/hacker1db/homebrew-tap), whose `bump formulas`
+workflow updates both formulas within a minute or two. The tap still polls every six hours, so a
+missing or failed dispatch only delays the update. Without the token below, the release still
+succeeds and the run shows a warning.
+
+Setup (once, by a repository admin):
+
+1. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new):
+   resource owner `hacker1db`; **Only select repositories**: `hacker1db/homebrew-tap` only;
+   repository permissions: **Contents: Read and write** (required by the dispatch API; Metadata
+   read-only is added automatically); nothing else. Give it an expiry and a calendar reminder.
+2. Store it as an Actions secret in this repository without echoing it:
+   `gh secret set TAP_DISPATCH_TOKEN -R hacker1db/ai-usage` and paste at the prompt.
+3. Check it on the next release: the `Notify homebrew-tap` step prints
+   `dispatched ai-usage-release for vX.Y.Z` and a `bump formulas` run (event
+   `repository_dispatch`) starts in the tap. A warning there instead means the secret is missing.
+
+When the token expires, the step fails with a `homebrew-tap not notified` error; the release
+itself is already published and the six-hour poll catches up. Rotate the token and repeat step 2.
