@@ -2,6 +2,8 @@
 package sources
 
 import (
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ai-usage/internal/usage"
 )
 
 // Status is one source's collection result.
@@ -18,6 +22,21 @@ type Status struct {
 	Path     string `json:"path"`
 	Status   string `json:"status"` // "ok", "not found", or "error: ..."
 	Requests int    `json:"requests"`
+	// Errors lists files or directories that could not be read while Status is "ok". The source
+	// still reports what it read, but its totals may be short.
+	Errors []string `json:"errors,omitempty"`
+}
+
+// maxStatusErrors caps Status.Errors; the last entry then says how many more there were.
+const maxStatusErrors = 5
+
+// capErrors trims errs to maxStatusErrors entries.
+func capErrors(errs []string) []string {
+	if len(errs) <= maxStatusErrors {
+		return errs
+	}
+	out := append([]string(nil), errs[:maxStatusErrors-1]...)
+	return append(out, fmt.Sprintf("and %d more", len(errs)-(maxStatusErrors-1)))
 }
 
 // Stats counts parse-cache hits and misses for one collection.
@@ -96,17 +115,23 @@ type parsedFile[T any] struct {
 }
 
 // parseAll parses files modified at or after cutoff in parallel and returns results in path order,
-// so dedupe (first file wins) stays deterministic.
-func parseAll[T any](c *FileCache[T], paths []string, cutoff time.Time, parse func(string) T) []parsedFile[T] {
+// so dedupe (first file wins) stays deterministic. Files that cannot be stat'ed are returned as
+// errors instead of being skipped silently.
+func parseAll[T any](c *FileCache[T], paths []string, cutoff time.Time, parse func(string) T) ([]parsedFile[T], []string) {
 	type job struct {
 		i    int
 		path string
 		info fs.FileInfo
 	}
 	var jobs []job
+	var errs []string
 	for _, p := range paths {
 		info, err := os.Stat(p)
-		if err != nil || info.ModTime().Before(cutoff) {
+		if err != nil {
+			errs = append(errs, usage.Tilde(p)+": "+err.Error())
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
 			continue
 		}
 		jobs = append(jobs, job{len(jobs), p, info})
@@ -128,15 +153,18 @@ func parseAll[T any](c *FileCache[T], paths []string, cutoff time.Time, parse fu
 	}
 	close(ch)
 	wg.Wait()
-	return out
+	return out, errs
 }
 
 // jsonlFiles lists *.jsonl files under root, skipping dot-directories and dot-files like a shell
-// glob would. Symlinked directories are not followed.
-func jsonlFiles(root string) []string {
-	var out []string
+// glob would. Symlinked directories are not followed. Unreadable entries below root are returned
+// as errors; a missing root is not an error.
+func jsonlFiles(root string) (out, errs []string) {
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if p != root || !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, usage.Tilde(p)+": "+err.Error())
+			}
 			return nil
 		}
 		name := d.Name()
@@ -152,7 +180,23 @@ func jsonlFiles(root string) []string {
 		return nil
 	})
 	sort.Strings(out)
-	return out
+	return out, errs
+}
+
+// statSource tells a missing log location ("not found") from one that exists but can't be read
+// ("error: ..."), so a permission problem never passes for a tool that simply isn't installed.
+// It returns "" when p exists (and is a directory, if wantDir).
+func statSource(p string, wantDir bool) string {
+	st, err := os.Stat(p)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "not found"
+	case err != nil:
+		return "error: " + err.Error()
+	case wantDir && !st.IsDir():
+		return "error: " + usage.Tilde(p) + " is not a directory"
+	}
+	return ""
 }
 
 func isDir(p string) bool {

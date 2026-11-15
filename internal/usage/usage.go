@@ -130,6 +130,7 @@ type session struct {
 	slots                             map[int64]struct{}
 	first, last                       time.Time
 	meta                              Meta
+	byModel                           map[string]*Metrics
 }
 
 // Aggregator collects records newer than Cutoff into rows and sessions.
@@ -148,7 +149,7 @@ func NewAggregator(cutoff time.Time, bucket Granularity) *Aggregator {
 func (a *Aggregator) session(k SessionKey) *session {
 	s := a.sessions[k]
 	if s == nil {
-		s = &session{slots: map[int64]struct{}{}}
+		s = &session{slots: map[int64]struct{}{}, byModel: map[string]*Metrics{}}
 		a.sessions[k] = s
 	}
 	return s
@@ -180,8 +181,9 @@ func (a *Aggregator) Add(tool, profile string, r Record) bool {
 		acc = &rowAcc{sessions: map[SessionKey]struct{}{}}
 		a.rows[k] = acc
 	}
-	acc.m.Add(Metrics{Requests: 1, Input: r.Input, Cached: r.Cached, CacheWrite: r.CacheWrite,
-		CacheWrite1h: r.CacheWrite1h, Output: r.Output, Reasoning: r.Reasoning, Total: r.Input + r.Output})
+	m := Metrics{Requests: 1, Input: r.Input, Cached: r.Cached, CacheWrite: r.CacheWrite,
+		CacheWrite1h: r.CacheWrite1h, Output: r.Output, Reasoning: r.Reasoning, Total: r.Input + r.Output}
+	acc.m.Add(m)
 	acc.aiu += r.CopilotAIU
 	if r.Session != "" {
 		sk := SessionKey{tool, profile, r.Session}
@@ -192,6 +194,12 @@ func (a *Aggregator) Add(tool, profile string, r Record) bool {
 		s.uncached += max(r.Input-r.Cached, 0) + r.Output
 		s.output += r.Output
 		s.models.Add(model, 1)
+		mm := s.byModel[model]
+		if mm == nil {
+			mm = &Metrics{}
+			s.byModel[model] = mm
+		}
+		mm.Add(m)
 		s.slots[Slot(r.Time)] = struct{}{}
 		if s.first.IsZero() || r.Time.Before(s.first) {
 			s.first = r.Time
@@ -201,6 +209,19 @@ func (a *Aggregator) Add(tool, profile string, r Record) bool {
 		}
 	}
 	return true
+}
+
+// SessionModels returns a session's metrics per model, or nil when it has no usage in the window.
+func (a *Aggregator) SessionModels(k SessionKey) map[string]Metrics {
+	s := a.sessions[k]
+	if s == nil || s.requests == 0 {
+		return nil
+	}
+	out := make(map[string]Metrics, len(s.byModel))
+	for name, m := range s.byModel {
+		out[name] = *m
+	}
+	return out
 }
 
 // Note merges metadata into a session (creating it if needed).

@@ -2,7 +2,6 @@ package sources
 
 import (
 	"encoding/json"
-	"os"
 
 	"ai-usage/internal/proxylog"
 	"ai-usage/internal/usage"
@@ -13,8 +12,8 @@ import (
 func CollectProxy(agg *usage.Aggregator, logPath string) Status {
 	logPath = usage.ExpandHome(logPath)
 	st := Status{Source: usage.ToolProxy, Path: usage.Tilde(logPath)}
-	if _, err := os.Stat(logPath); err != nil {
-		st.Status = "not found"
+	if missing := statSource(logPath, false); missing != "" {
+		st.Status = missing
 		return st
 	}
 	err := usage.EachJSONLine(logPath, func(line []byte) {

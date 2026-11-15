@@ -77,6 +77,7 @@ type CodexFile struct {
 	records []codexRecord
 	session string
 	meta    usage.Meta
+	err     string // read failure; records hold whatever was read before it
 }
 
 // commandText reads a shell command given as a string or an argv array.
@@ -105,13 +106,16 @@ func commandText(raw json.RawMessage) string {
 // don't double count.
 func ParseCodexFile(path string) CodexFile {
 	var events []codexEvent
-	_ = usage.EachJSONLine(path, func(line []byte) {
+	readErr := usage.EachJSONLine(path, func(line []byte) {
 		var e codexEvent
 		if json.Unmarshal(line, &e) == nil {
 			events = append(events, e)
 		}
 	})
 	out := CodexFile{session: strings.TrimSuffix(filepath.Base(path), ".jsonl"), meta: usage.Meta{Slots: map[int64]struct{}{}}}
+	if readErr != nil {
+		out.err = usage.Tilde(path) + ": " + readErr.Error()
+	}
 	hasRecords := false
 	for _, e := range events {
 		if e.Type == "token_usage_record" {
@@ -254,19 +258,25 @@ func CollectCodex(agg *usage.Aggregator, root string, cache *FileCache[CodexFile
 		cache = NewFileCache[CodexFile]()
 	}
 	root = usage.ExpandHome(root)
-	var files []string
+	var files, errs []string
 	for _, d := range []string{"sessions", "archived_sessions"} {
-		files = append(files, jsonlFiles(filepath.Join(root, d))...)
+		f, e := jsonlFiles(filepath.Join(root, d))
+		files, errs = append(files, f...), append(errs, e...)
 	}
-	if len(files) == 0 {
-		return Status{usage.ToolCodex, usage.Tilde(root), "not found", 0}
+	if len(files) == 0 && len(errs) == 0 {
+		return Status{usage.ToolCodex, usage.Tilde(root), "not found", 0, nil}
 	}
 	titles := map[string]string{}
 	if _, err := os.Stat(filepath.Join(root, "session_index.jsonl")); err == nil {
 		titles = codexTitles(root)
 	}
 	count, seen := 0, map[string]struct{}{}
-	for _, f := range parseAll(cache, files, agg.Cutoff, ParseCodexFile) {
+	parsed, statErrs := parseAll(cache, files, agg.Cutoff, ParseCodexFile)
+	errs = append(errs, statErrs...)
+	for _, f := range parsed {
+		if f.val.err != "" {
+			errs = append(errs, f.val.err)
+		}
 		type ps struct{ profile, session string }
 		profiles := map[ps]struct{}{}
 		var order []ps
@@ -301,5 +311,5 @@ func CollectCodex(agg *usage.Aggregator, root string, cache *FileCache[CodexFile
 			agg.Note(usage.SessionKey{Tool: usage.ToolCodex, Profile: k.profile, ID: k.session}, meta)
 		}
 	}
-	return Status{usage.ToolCodex, usage.Tilde(root), "ok", count}
+	return Status{usage.ToolCodex, usage.Tilde(root), "ok", count, capErrors(errs)}
 }

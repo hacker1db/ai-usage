@@ -89,3 +89,85 @@ func TestCodexHomesIncludesExtrasOnce(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+func TestUnreadableFilesAreReportedNotSkipped(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file permissions")
+	}
+	root := t.TempDir()
+	ts := time.Now().UTC().Format(time.RFC3339)
+	line := func(id string) string {
+		return `{"type":"assistant","sessionId":"s1","timestamp":"` + ts + `","requestId":"` + id + `",` +
+			`"message":{"id":"` + id + `","model":"m","usage":{"input_tokens":1000000,"output_tokens":0}}}`
+	}
+	write(t, filepath.Join(root, "projects", "p", "a.jsonl"), line("m1"))
+	locked := filepath.Join(root, "projects", "p", "b.jsonl")
+	write(t, locked, line("m2"))
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	lockedDir := filepath.Join(root, "projects", "q")
+	write(t, filepath.Join(lockedDir, "c.jsonl"), line("m3"))
+	if err := os.Chmod(lockedDir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o644); _ = os.Chmod(lockedDir, 0o755) })
+
+	agg := usage.NewAggregator(time.Time{}, usage.Daily)
+	st := CollectClaude(agg, []ClaudeDir{{root, "personal"}}, nil)
+	if st[0].Status != "ok" || st[0].Requests != 1 {
+		t.Fatalf("status = %+v, want ok with the 1 readable request", st[0])
+	}
+	got := strings.Join(st[0].Errors, "\n")
+	if !strings.Contains(got, "b.jsonl") || !strings.Contains(got, filepath.Base(lockedDir)) {
+		t.Fatalf("unreadable file and directory not reported: %q", st[0].Errors)
+	}
+
+	codex := t.TempDir()
+	cf := filepath.Join(codex, "sessions", "2026", "r.jsonl")
+	write(t, cf, `{"type":"session_meta"}`)
+	if err := os.Chmod(cf, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(cf, 0o644) })
+	if cs := CollectCodex(usage.NewAggregator(time.Time{}, usage.Daily), codex, nil); len(cs.Errors) != 1 {
+		t.Fatalf("codex status = %+v, want one error", cs)
+	}
+}
+
+func TestCapErrors(t *testing.T) {
+	in := []string{"a", "b", "c", "d", "e", "f", "g"}
+	got := capErrors(in)
+	if len(got) != maxStatusErrors || got[len(got)-1] != "and 3 more" {
+		t.Fatalf("got %q", got)
+	}
+	if len(capErrors(in[:5])) != 5 {
+		t.Fatal("capped a list at the limit")
+	}
+}
+
+func TestUntraversableRootIsAnErrorNotMissing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file permissions")
+	}
+	root := t.TempDir()
+	write(t, filepath.Join(root, "projects", "p", "a.jsonl"), `{}`)
+	if err := os.Chmod(root, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
+	st := CollectClaude(usage.NewAggregator(time.Time{}, usage.Daily), []ClaudeDir{{root, "x"}}, nil)
+	if !strings.HasPrefix(st[0].Status, "error: ") {
+		t.Fatalf("untraversable Claude root reported as %q", st[0].Status)
+	}
+	if cs := CollectCopilot(usage.NewAggregator(time.Time{}, usage.Daily), filepath.Join(root, "db.sqlite")); !strings.HasPrefix(cs.Status, "error: ") {
+		t.Fatalf("untraversable Copilot path reported as %q", cs.Status)
+	}
+	if ps := CollectProxy(usage.NewAggregator(time.Time{}, usage.Daily), filepath.Join(root, "proxy.log")); !strings.HasPrefix(ps.Status, "error: ") {
+		t.Fatalf("untraversable proxy path reported as %q", ps.Status)
+	}
+	missing := filepath.Join(t.TempDir(), "nope")
+	if st := CollectClaude(usage.NewAggregator(time.Time{}, usage.Daily), []ClaudeDir{{missing, "x"}}, nil); st[0].Status != "not found" {
+		t.Fatalf("missing root reported as %q", st[0].Status)
+	}
+}

@@ -4,6 +4,7 @@
 //	ai-usage serve    live web dashboard on a loopback address
 //	ai-usage tui      live terminal dashboard (same data and charts)
 //	ai-usage report   dated report.md, usage.json, usage.csv
+//	ai-usage plan-cost  tokens and estimated cost of a set of linked sessions
 package main
 
 import (
@@ -32,6 +33,8 @@ func main() {
 		err = runCost(args)
 	case "report":
 		err = runReport(args)
+	case "plan-cost":
+		err = runPlanCost(args)
 	case "version", "-version", "--version":
 		fmt.Println(version)
 	case "help", "-h", "-help", "--help":
@@ -54,6 +57,7 @@ commands:
   tui      live terminal dashboard; reads a running dashboard, else collects locally
   report   write reports/<today>/{report.md,usage.json,usage.csv}
   cost     retrieve actual Azure or Copilot metered costs as JSON
+  plan-cost  total tokens and estimated cost of linked sessions (-session tool|profile|id ...)
   version  print the version
 
 Run "ai-usage <command> -h" for a command's flags.

@@ -93,6 +93,7 @@ type claudeRecord struct {
 type ClaudeFile struct {
 	records []claudeRecord
 	meta    map[string]*usage.Meta
+	err     string // read failure; records hold whatever was read before it
 }
 
 // ParseClaudeFile reads one Claude Code transcript.
@@ -107,7 +108,7 @@ func ParseClaudeFile(path string) ClaudeFile {
 		}
 		return m
 	}
-	_ = usage.EachJSONLine(path, func(line []byte) {
+	readErr := usage.EachJSONLine(path, func(line []byte) {
 		var e claudeEntry
 		if json.Unmarshal(line, &e) != nil {
 			return
@@ -223,6 +224,9 @@ func ParseClaudeFile(path string) ClaudeFile {
 			Output: int64(u.OutputTokens),
 		}})
 	})
+	if readErr != nil {
+		out.err = usage.Tilde(path) + ": " + readErr.Error()
+	}
 	return out
 }
 
@@ -242,12 +246,18 @@ func CollectClaude(agg *usage.Aggregator, dirs []ClaudeDir, cache *FileCache[Cla
 		}
 		name := usage.ToolClaude + ":" + d.Label
 		projects := filepath.Join(root, "projects")
-		if !isDir(projects) {
-			status = append(status, Status{name, usage.Tilde(root), "not found", 0})
+		if st := statSource(projects, true); st != "" {
+			status = append(status, Status{name, usage.Tilde(root), st, 0, nil})
 			continue
 		}
 		count := 0
-		for _, f := range parseAll(cache, jsonlFiles(projects), agg.Cutoff, ParseClaudeFile) {
+		paths, errs := jsonlFiles(projects)
+		parsed, statErrs := parseAll(cache, paths, agg.Cutoff, ParseClaudeFile)
+		errs = append(errs, statErrs...)
+		for _, f := range parsed {
+			if f.val.err != "" {
+				errs = append(errs, f.val.err)
+			}
 			for _, r := range f.val.records {
 				if r.dedupe != "" {
 					if _, dup := seen[r.dedupe]; dup {
@@ -266,7 +276,7 @@ func CollectClaude(agg *usage.Aggregator, dirs []ClaudeDir, cache *FileCache[Cla
 				}
 			}
 		}
-		status = append(status, Status{name, usage.Tilde(root), "ok", count})
+		status = append(status, Status{name, usage.Tilde(root), "ok", count, capErrors(errs)})
 	}
 	return status
 }
