@@ -1,0 +1,17 @@
+---
+# super-linter v9.0.0's default markdownlint rules (TEMPLATES/.markdown-lint.yml), plus MD060 off:
+# the docs use compact tables (|---|), and padding every table to an aligned style is churn with no
+# reader benefit.
+MD004: false # Unordered list style
+MD007:
+  indent: 2 # Unordered list indentation
+MD013:
+  line_length: 400
+MD026:
+  punctuation: ".,;:!。，；:"
+MD029: false # Ordered list item prefix
+MD033: false # Allow inline HTML
+MD036: false # Emphasis used instead of a heading
+MD060: false # Table column style
+
+blank_lines: false
