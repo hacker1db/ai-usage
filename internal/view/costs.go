@@ -324,10 +324,3 @@ func modeName(m string) string {
 	}
 	return m
 }
-
-func orDefault(s, d string) string {
-	if s == "" {
-		return d
-	}
-	return s
-}

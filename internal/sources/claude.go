@@ -241,8 +241,8 @@ func CollectClaude(agg *usage.Aggregator, dirs []ClaudeDir, cache *FileCache[Cla
 	var status []Status
 	for _, d := range dirs {
 		root := usage.ExpandHome(d.Path)
-		if real, err := filepath.EvalSymlinks(root); err == nil {
-			root = real
+		if resolved, err := filepath.EvalSymlinks(root); err == nil {
+			root = resolved
 		}
 		name := usage.ToolClaude + ":" + d.Label
 		projects := filepath.Join(root, "projects")

@@ -91,7 +91,7 @@ func (s *serverSource) fetch(ctx context.Context) (netErr error) {
 	default:
 		snap, derr := snapshot.Decode(body)
 		if derr != nil {
-			s.err = fmt.Errorf("dashboard is still collecting or sent an unexpected snapshot (%v)", derr)
+			s.err = fmt.Errorf("dashboard is still collecting or sent an unexpected snapshot (%w)", derr)
 			break
 		}
 		s.snap, s.etag, s.err, s.lastOK = snap, resp.Header.Get("ETag"), nil, time.Now()
@@ -471,8 +471,7 @@ func csi(b []byte) (string, int) {
 		"Z": "shift-tab", "5~": "pgup", "6~": "pgdn", "1~": "home", "4~": "end", "7~": "home", "8~": "end"}
 	for j := range b {
 		if c := b[j]; c >= 0x40 && c <= 0x7e {
-			seq := string(b[:j+1])
-			if n, ok := names[seq]; ok {
+			if n, ok := names[string(b[:j+1])]; ok {
 				return n, j + 1
 			}
 			return "unknown", j + 1

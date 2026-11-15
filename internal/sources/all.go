@@ -63,12 +63,12 @@ func dedupeHomes(paths []string) []string {
 		if p == "" {
 			continue
 		}
-		real := usage.ExpandHome(p)
-		if r, err := filepath.EvalSymlinks(real); err == nil {
-			real = r
+		resolved := usage.ExpandHome(p)
+		if r, err := filepath.EvalSymlinks(resolved); err == nil {
+			resolved = r
 		}
-		if !seen[real] {
-			seen[real] = true
+		if !seen[resolved] {
+			seen[resolved] = true
 			out = append(out, p)
 		}
 	}

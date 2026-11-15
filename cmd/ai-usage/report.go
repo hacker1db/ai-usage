@@ -14,7 +14,7 @@ func runReport(args []string) error {
 	fs := flag.NewFlagSet("report", flag.ExitOnError)
 	days := fs.Int("days", 30, "window in days")
 	out := fs.String("out", "reports", "output root; a dated subfolder is created")
-	print := fs.Bool("print", false, "also print the markdown report")
+	printMD := fs.Bool("print", false, "also print the markdown report")
 	opts := sourceFlags(fs)
 	_ = fs.Parse(args)
 	if *days < 1 {
@@ -26,7 +26,7 @@ func runReport(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *print {
+	if *printMD {
 		fmt.Println(md)
 	}
 	for _, s := range doc.Sources {

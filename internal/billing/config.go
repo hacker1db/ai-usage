@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -175,7 +176,7 @@ func (a Account) validate() error {
 	_, err := a.Fetch(context.Background(), func(context.Context, string, ...string) ([]byte, error) {
 		return nil, errValid
 	}, time.Now().UTC().Format("2006-01"))
-	if err == errValid || (a.Provider == "azure" && FixOf(err) != "") { // endpoints are detected later
+	if errors.Is(err, errValid) || (a.Provider == "azure" && FixOf(err) != "") { // endpoints are detected later
 		return nil
 	}
 	return err

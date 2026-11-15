@@ -65,7 +65,7 @@ func TestLoadRejects(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("err = %v, want containing %q", err, tt.wantErr)
 			}
-			if err != nil && strings.Contains(err.Error(), goodKey) {
+			if strings.Contains(err.Error(), goodKey) {
 				t.Fatalf("error leaks client key: %v", err)
 			}
 		})

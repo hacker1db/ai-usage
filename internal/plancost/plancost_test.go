@@ -46,7 +46,7 @@ func TestLoadPricingMissingFileIsUnloaded(t *testing.T) {
 
 func TestLoadPricingRejectsBadFiles(t *testing.T) {
 	cases := map[string]string{
-		"typo field":       `{"currency":"USD","unit":"per_million_tokens","models":{"a":{"input":1,"cached_input":1,"cache_write":1,"ouput":1}}}`,
+		"typo field":       `{"currency":"USD","unit":"per_million_tokens","models":{"a":{"input":1,"cached_input":1,"cache_write":1,"ouput":1}}}`, //nolint:misspell // the typo is the test case.
 		"missing field":    `{"currency":"USD","unit":"per_million_tokens","models":{"a":{"input":1,"cached_input":1,"cache_write":1}}}`,
 		"null field":       `{"currency":"USD","unit":"per_million_tokens","models":{"a":{"input":1,"cached_input":1,"cache_write":1,"output":null}}}`,
 		"negative":         `{"currency":"USD","unit":"per_million_tokens","models":{"a":{"input":-1,"cached_input":1,"cache_write":1,"output":1}}}`,
