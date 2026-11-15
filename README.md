@@ -189,6 +189,33 @@ Flags: `-claude DIR=LABEL` (repeatable, replaces the default profile list), `-co
 overwrites that day's folder. The Go port matches the earlier `collect.py` exactly on the same logs:
 every daily row, every metric, and byte-identical markdown.
 
+## Plan cost
+
+`plan-cost` totals the tokens and estimated dollar cost of sessions you name. Plan Manager calls it
+(`plan usage cost`, `plan archive`) for the sessions linked to a plan; it works on its own too.
+
+```zsh
+bin/ai-usage plan-cost -session 'claude-code|personal|<id>' -session <bare-codex-id>
+bin/ai-usage plan-cost -session a,b,c -json            # machine-readable, schema "version": 1
+bin/ai-usage plan-cost -session a -strict              # exit 3 when the summary is incomplete
+```
+
+A session is `tool|profile|id` (as shown on the dashboard) or a bare id that matches exactly one
+session; an ambiguous bare id is an error. The full log history is read, so a session that began
+long ago is counted whole. Claude Code subagent usage is logged under its parent session and is
+included; a delegated Codex or Copilot session is its own session and must be linked separately.
+
+Prices come from `~/.config/ai-usage/pricing.json` (`-pricing` overrides), in USD per million
+tokens. Copy `pricing.example.json` and fill in the rates from each provider's price page. Every
+model needs all four rates (`input`, `cached_input`, `cache_write`, `output`); a key ending in `*`
+matches by prefix, and an exact key or the longer prefix wins. `input` is charged only on input that
+was neither a cache read nor a cache write.
+
+The result is an **estimate** from local logs and your price table, not a bill. It is marked
+`"complete": false` whenever a session is missing (logs pruned or linked wrong), a model has no
+price, the pricing file is absent, or a source failed to read. Then `estimated_cost_usd` is `null`
+and `priced_cost_usd` holds the priced part, a lower bound; gaps are never counted as zero.
+
 ## Relationship to the ai-work-report skill
 
 This repo is the deterministic numbers layer: nothing here calls a model. The skill

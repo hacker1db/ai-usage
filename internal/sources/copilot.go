@@ -72,8 +72,8 @@ type copilotSession struct {
 func CollectCopilot(agg *usage.Aggregator, dbPath string) Status {
 	dbPath = usage.ExpandHome(dbPath)
 	st := Status{Source: usage.ToolCopilot, Path: usage.Tilde(dbPath)}
-	if _, err := os.Stat(dbPath); err != nil {
-		st.Status = "not found"
+	if missing := statSource(dbPath, false); missing != "" {
+		st.Status = missing
 		return st
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
