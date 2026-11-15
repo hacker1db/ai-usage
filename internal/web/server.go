@@ -223,7 +223,7 @@ var funcs = template.FuncMap{
 	"compacti":    func(n int64) string { return view.Compact(float64(n)) },
 	"exacti":      func(n any) string { return view.Exact(toFloat(n)) },
 	"pct":         view.Pct,
-	"dur":         func(min any) string { return view.Duration(toFloat(min)) },
+	"dur":         func(minutes any) string { return view.Duration(toFloat(minutes)) },
 	"when":        view.WhenLabel,
 	"whenStr":     func(s string) string { return view.WhenLabel(usage.ParseTime(s).Local()) },
 	"dayStr":      func(s string) string { return view.DayLabel(usage.ParseTime(s).Local()) },

@@ -59,7 +59,7 @@ func newCosts(run billing.Run, path string, detect func() []string, auto func([]
 		auto = func([]string) []billing.Account { return nil }
 	}
 	return &costs{run: run, path: path, detect: detect, auto: auto, gap: queryGap, status: map[string]billing.Status{},
-		jitter: func(d time.Duration) time.Duration { return d + time.Duration(rand.Int64N(int64(d)/5+1)) }}
+		jitter: func(d time.Duration) time.Duration { return d + time.Duration(rand.Int64N(int64(d)/5+1)) }} //nolint:gosec // G404: poll jitter, not a security value.
 }
 
 // loop rereads the billing config every minute and queries whatever is due, until ctx ends.
@@ -222,7 +222,7 @@ func (k *costs) shared(f func(status map[string]billing.Status, claims map[strin
 	if err == nil {
 		defer lock.Close()
 		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX)
-		defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
 	}
 	if raw, err := os.ReadFile(k.cache); err == nil {
 		_ = json.Unmarshal(raw, &c)

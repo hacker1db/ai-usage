@@ -50,12 +50,6 @@ func (s *svg) text(x, y float64, class, anchor, body string, extra ...string) {
 	s.end("text")
 }
 
-func (s *svg) title(body string) {
-	s.b.WriteString("<title>")
-	s.b.WriteString(html.EscapeString(body))
-	s.b.WriteString("</title>")
-}
-
 func (s *svg) html() template.HTML { return template.HTML(s.b.String()) } //nolint:gosec // all content escaped above
 
 // newSVG starts a responsive chart: it scales to its container through the viewBox.

@@ -14,7 +14,7 @@ import (
 
 const (
 	DefaultListen             = "127.0.0.1:8787"
-	DefaultTokenScope         = "https://ai.azure.com/.default"
+	DefaultTokenScope         = "https://ai.azure.com/.default" //nolint:gosec // G101: an OAuth scope URL, not a credential.
 	DefaultStreamIdleTimeout  = 2 * time.Minute
 	DefaultResponseHeaderWait = 10 * time.Minute
 	DefaultMaxRequestBytes    = 64 << 20

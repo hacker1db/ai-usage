@@ -31,6 +31,8 @@ retire_other_agents() {
 # xml_escape VALUE -> VALUE safe inside a plist <string>
 xml_escape() {
     local s="$1"
-    s="${s//&/&amp;}"; s="${s//</&lt;}"; s="${s//>/&gt;}"
+    s="${s//&/&amp;}"
+    s="${s//</&lt;}"
+    s="${s//>/&gt;}"
     printf '%s' "$s"
 }

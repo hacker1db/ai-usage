@@ -137,7 +137,7 @@ func Parse(src string, me []string, t *Types) (*Classifier, error) {
 		root, ok = &Map{Vals: map[string]any{}}, true
 	}
 	if !ok {
-		return nil, errors.New("the top level must be a mapping with default:, labels:, and profiles:")
+		return nil, errors.New("the top level must be a mapping with the keys default, labels, and profiles")
 	}
 	c := newClassifier(t)
 	var warn []string

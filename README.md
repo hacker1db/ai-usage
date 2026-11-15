@@ -24,7 +24,8 @@ brew install hacker1db/ai-usage/ai-usage hacker1db/ai-usage/foundry-entra-proxy
 
 ```zsh
 make build                     # bin/ai-usage and bin/foundry-entra-proxy
-make check                     # gofmt, vet, race tests, JS syntax check, stdlib-only rule
+make check                     # gofmt, vet, race tests, JS syntax check, stdlib-only rule, govulncheck
+make lint                      # golangci-lint and the app.js type check (see Development)
 bin/ai-usage serve             # web dashboard in the foreground; prints the URL and opens it (-open=false to skip)
 bin/ai-usage tui               # terminal dashboard (reads the running dashboard, else collects locally)
 bin/ai-usage report -days 7 -print
@@ -338,10 +339,32 @@ in the data folder, shared under a file lock, so restarts, `tui -local`, and a s
 reuse fresh results instead of querying again. Costs are not filtered by tab or profile and are
 never added to token counts.
 
+## Development
+
+`make check` is the gate CI runs: gofmt, `go vet`, race tests, a `node --check` of `app.js`, the
+stdlib-only dependency rule, and `govulncheck ./...` when it is installed
+(`go install golang.org/x/vuln/cmd/govulncheck@latest`). CI installs a pinned govulncheck.
+
+`make lint` runs static analysis and type checking:
+
+- `golangci-lint` v2 with [`.github/linters/.golangci.yml`](.github/linters/.golangci.yml):
+  govet (all analyzers but fieldalignment and shadow), staticcheck, errcheck, ineffassign, unused,
+  gosec, bodyclose, errorlint, misspell, a light revive set, and gofmt/goimports. Suppressions name
+  the linter and a reason (`//nolint:gosec // G602: ...`); prefer a fix.
+- `tsc --noEmit --checkJs --strict` over `internal/web/static/app.js` (it carries `// @ts-check`),
+  with a pinned TypeScript run through `npx`; no `package.json` is needed.
+
+CI's `lint` job runs [super-linter](https://github.com/super-linter/super-linter) (slim) on the
+whole tree with an explicit set of validators: golangci-lint on the Go module, actionlint and
+zizmor on workflows, shellcheck and shfmt on `scripts/` (shfmt follows
+[`.editorconfig`](.editorconfig)), markdownlint, yamllint, JSON, EditorConfig, and gitleaks. Its
+configs live in [`.github/linters/`](.github/linters); then the job runs the same `tsc` check.
+Linter tools are CI-only; the Go module itself stays stdlib-only.
+
 ## Releases
 
-Every push to `main` runs [`release.yml`](.github/workflows/release.yml): the same `make check` as
-pull requests ([`ci.yml`](.github/workflows/ci.yml)), then a release decision made by
+Every push to `main` runs [`release.yml`](.github/workflows/release.yml): the same `make check` and
+`lint` jobs as pull requests ([`ci.yml`](.github/workflows/ci.yml)), then a release decision made by
 [`scripts/nextversion`](scripts/nextversion/main.go) from the commits since the newest `vX.Y.Z`
 tag. Install with `brew install hacker1db/tap/ai-usage hacker1db/tap/foundry-entra-proxy`; both
 formulas build from the same release tarball.

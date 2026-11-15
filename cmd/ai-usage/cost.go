@@ -5,6 +5,7 @@ import (
 	"ai-usage/internal/sources"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -22,7 +23,7 @@ func runCost(args []string) error {
 	account := fs.String("github-account", "", "GitHub billing account (default for users: the logged-in gh user)")
 	mode := fs.String("github-mode", "ai_credit", "ai_credit or premium_request (never summed)")
 	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err

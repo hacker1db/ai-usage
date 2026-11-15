@@ -1,0 +1,12 @@
+---
+# yamllint config for super-linter: the defaults, minus the 80-column limit and the "---"
+# document marker, neither of which the workflows or examples use.
+extends: default
+rules:
+  comments:
+    min-spaces-from-content: 1
+  document-start: disable
+  line-length:
+    max: 150
+  truthy:
+    check-keys: false

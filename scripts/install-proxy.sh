@@ -36,20 +36,45 @@ listen_from_user=0
 [[ -z "${FEP_LISTEN:-}" ]] || listen_from_user=1
 mode=install
 
-die() { printf 'install-proxy.sh: %s\n' "$*" >&2; exit 1; }
+die() {
+    printf 'install-proxy.sh: %s\n' "$*" >&2
+    exit 1
+}
 
 # usage prints the comment block at the top of this file, without the leading "# ".
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --resource) resource="${2:?}"; shift 2 ;;
-        --deployments) deployments="${2:?}"; shift 2 ;;
-        --tenant) tenant="${2:?}"; shift 2 ;;
-        --listen) listen="${2:?}"; listen_from_user=1; shift 2 ;;
-        --check) mode=check; shift ;;
-        --uninstall) mode=uninstall; shift ;;
-        -h|--help) usage; exit 0 ;;
+        --resource)
+            resource="${2:?}"
+            shift 2
+            ;;
+        --deployments)
+            deployments="${2:?}"
+            shift 2
+            ;;
+        --tenant)
+            tenant="${2:?}"
+            shift 2
+            ;;
+        --listen)
+            listen="${2:?}"
+            listen_from_user=1
+            shift 2
+            ;;
+        --check)
+            mode=check
+            shift
+            ;;
+        --uninstall)
+            mode=uninstall
+            shift
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
         *) die "unknown argument: $1" ;;
     esac
 done
@@ -72,8 +97,8 @@ if [[ "$mode" == check ]]; then
     status=0
     # Without an explicit --listen or FEP_LISTEN, probe the address the installed agent uses.
     if ((listen_from_user == 0)) && [[ -f "$plist" ]]; then
-        if installed_listen="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:FEP_LISTEN' "$plist" 2>/dev/null)" \
-            && [[ "$installed_listen" =~ ^(127\.0\.0\.1|\[::1\]|localhost):[0-9]+$ ]]; then
+        if installed_listen="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:FEP_LISTEN' "$plist" 2>/dev/null)" &&
+            [[ "$installed_listen" =~ ^(127\.0\.0\.1|\[::1\]|localhost):[0-9]+$ ]]; then
             listen="$installed_listen"
         fi
     fi
@@ -81,17 +106,20 @@ if [[ "$mode" == check ]]; then
     if [[ -x "$bin_path" ]]; then
         echo "binary:  $bin_path ($("$bin_path" -version))"
     else
-        echo "binary:  missing ($bin_path)"; status=2
+        echo "binary:  missing ($bin_path)"
+        status=2
     fi
     if [[ -f "$key_file" && "$(stat -f %Lp "$key_file")" == 600 ]]; then
         echo "key:     $key_file (mode 600)"
     else
-        echo "key:     missing or not mode 600 ($key_file)"; status=2
+        echo "key:     missing or not mode 600 ($key_file)"
+        status=2
     fi
     if launchctl print "$domain/$label" >/dev/null 2>&1; then
         echo "agent:   loaded ($label)"
     else
-        echo "agent:   not loaded ($label)"; status=2
+        echo "agent:   not loaded ($label)"
+        status=2
     fi
     echo "healthz: $(probe /healthz)"
     echo "readyz:  $(probe /readyz)"
@@ -115,7 +143,10 @@ echo "Built $bin_path ($version)"
 if [[ ! -f "$key_file" ]]; then
     mkdir -p "$key_dir"
     chmod 700 "$key_dir"
-    (umask 077; openssl rand -hex 32 > "$key_file")
+    (
+        umask 077
+        openssl rand -hex 32 >"$key_file"
+    )
     echo "Created client key $key_file"
 fi
 chmod 600 "$key_file"
@@ -125,7 +156,7 @@ retire_other_agents "$service" "$label"
 # Values were validated above; the label and paths are escaped because they come from the account.
 tenant_xml=""
 [[ -z "$tenant" ]] || tenant_xml="<key>FEP_TENANT</key><string>$tenant</string>"
-cat > "$plist.tmp" <<EOF
+cat >"$plist.tmp" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -167,8 +198,8 @@ if launchctl print "$domain/$label" >/dev/null 2>&1; then
         echo "install-proxy.sh: warning: $label still registered 10s after bootout; trying bootstrap anyway" >&2
     fi
 fi
-launchctl bootstrap "$domain" "$plist" \
-    || die "launchctl bootstrap failed; $label is NOT loaded and the proxy is down. Retry scripts/install-proxy.sh or run: launchctl bootstrap $domain $plist"
+launchctl bootstrap "$domain" "$plist" ||
+    die "launchctl bootstrap failed; $label is NOT loaded and the proxy is down. Retry scripts/install-proxy.sh or run: launchctl bootstrap $domain $plist"
 echo "Loaded $label ($plist); logs: $log_dir/proxy.log"
 
 healthy=0

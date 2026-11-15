@@ -1,0 +1,29 @@
+# https://editorconfig.org. Also read by shfmt, which super-linter runs on scripts/.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Go files are gofmt's job (raw strings in tests hold space-indented YAML).
+[{go.mod,Makefile}]
+indent_style = tab
+
+[*.{js,json,yml,yaml,rb}]
+indent_style = space
+indent_size = 2
+
+[*.sh]
+indent_style = space
+indent_size = 4
+switch_case_indent = true
+
+[*.md]
+indent_style = space
+trim_trailing_whitespace = false
+
+# Embedded templates are rendered byte for byte; a trailing newline would change the output.
+[*.html]
+insert_final_newline = unset
