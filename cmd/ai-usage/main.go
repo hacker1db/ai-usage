@@ -90,8 +90,9 @@ func sourceFlags(fs *flag.FlagSet) func() sources.Options {
 	codex := fs.String("codex-home", d.CodexHome, "Codex home")
 	copilot := fs.String("copilot-db", d.CopilotDB, "Copilot CLI session store")
 	proxy := fs.String("proxy-log", d.ProxyLog, "foundry-entra-proxy log")
+	gw := fs.String("gateway-log", d.GatewayLog, "ai-gateway log")
 	return func() sources.Options {
-		o := sources.Options{CodexHome: *codex, CodexExtra: sources.DefaultCodexExtras(*codex), CopilotDB: *copilot, ProxyLog: *proxy}
+		o := sources.Options{CodexHome: *codex, CodexExtra: sources.DefaultCodexExtras(*codex), CopilotDB: *copilot, ProxyLog: *proxy, GatewayLog: *gw}
 		if len(claude) > 0 {
 			o.Claude = claude
 		}
