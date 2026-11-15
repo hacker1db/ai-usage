@@ -74,6 +74,7 @@ var Tabs = []Tab{
 	{Option{"codex", "Codex"}, func(t, _ string) bool { return t == usage.ToolCodex }},
 	{Option{"copilot", "Copilot"}, func(t, _ string) bool { return t == usage.ToolCopilot }},
 	{Option{"foundry", "Foundry"}, func(t, p string) bool { return p == "work-foundry" && t != usage.ToolProxy }},
+	{Option{"gateway", "Gateway"}, func(t, _ string) bool { return t == usage.ToolGateway }},
 }
 
 // Metric is what the charts count.
