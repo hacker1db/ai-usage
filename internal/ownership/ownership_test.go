@@ -136,7 +136,7 @@ func TestTypesCache(t *testing.T) {
 	if ty.Of("hacker1db") != TypeUser || ty.Of("HACKER1DB") != TypeUser || ty.Of("example-org") != TypeOrg {
 		t.Fatal("wrong types")
 	}
-	if ty.Of("ghost") != "" || ty.Of("ghost") != "" {
+	if first, again := ty.Of("ghost"), ty.Of("ghost"); first != "" || again != "" {
 		t.Fatal("unknown owner got a type")
 	}
 	if calls != 3 { // the repeat and the failed retry are both cached

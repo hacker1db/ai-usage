@@ -22,7 +22,7 @@ func Compact(v float64) string {
 		if a >= u.div {
 			x := math.Round(v/u.div*10) / 10
 			if math.Abs(x) >= 1000 && i > 0 { // 999.96K rounds to 1000K: promote
-				u = units[i-1]
+				u = units[i-1] //nolint:gosec // G602: guarded by i > 0.
 				x = math.Round(v/u.div*10) / 10
 			}
 			s := strconv.FormatFloat(x, 'f', 1, 64)
@@ -54,11 +54,11 @@ func Exact(v float64) string {
 }
 
 // Duration formats minutes as 45m or 2.5h.
-func Duration(min float64) string {
-	if min >= 60 {
-		return fmt.Sprintf("%.1fh", min/60)
+func Duration(minutes float64) string {
+	if minutes >= 60 {
+		return fmt.Sprintf("%.1fh", minutes/60)
 	}
-	return fmt.Sprintf("%dm", int(math.Round(min)))
+	return fmt.Sprintf("%dm", int(math.Round(minutes)))
 }
 
 // Pct formats a share 0-1 as 42%, <1%, or —.
@@ -93,11 +93,11 @@ func NiceMax(v float64) float64 {
 	return 10 * p
 }
 
-// Ticks returns n+1 evenly spaced axis values from 0 to max.
-func Ticks(max float64, n int) []float64 {
+// Ticks returns n+1 evenly spaced axis values from 0 to top.
+func Ticks(top float64, n int) []float64 {
 	out := make([]float64, n+1)
 	for i := range out {
-		out[i] = max / float64(n) * float64(i)
+		out[i] = top / float64(n) * float64(i)
 	}
 	return out
 }

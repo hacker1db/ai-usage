@@ -98,7 +98,7 @@ func (t *Types) Save() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(t.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(t.path), 0o755); err != nil { //nolint:gosec // G301: a shared cache directory; the file inside is what matters.
 		return err
 	}
 	tmp := t.path + ".tmp"

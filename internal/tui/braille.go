@@ -57,7 +57,7 @@ func (b *Braille) Cell(cx, cy int) (rune, string) {
 	if b.bits[i] == 0 {
 		return ' ', ""
 	}
-	return rune(0x2800 + int(b.bits[i])), b.color[i]
+	return 0x2800 + rune(b.bits[i]), b.color[i]
 }
 
 func abs(v int) int {

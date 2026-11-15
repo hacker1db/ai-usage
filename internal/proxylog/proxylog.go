@@ -13,7 +13,7 @@ const (
 	KeyClient          = "client"
 	KeyInputTokens     = "input_tokens"
 	KeyOutputTokens    = "output_tokens"
-	KeyCachedTokens    = "cached_tokens"
+	KeyCachedTokens    = "cached_tokens" //nolint:gosec // G101: a log attribute name, not a credential.
 	KeyReasoningTokens = "reasoning_tokens"
 	KeyTotalTokens     = "total_tokens"
 )

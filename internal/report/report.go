@@ -80,21 +80,21 @@ func Build(now time.Time, days int, opts sources.Options) (Document, *usage.Aggr
 // and the markdown.
 func Write(doc Document, agg *usage.Aggregator, outRoot string) (string, string, error) {
 	dir := filepath.Join(usage.ExpandHome(outRoot), doc.Meta.Until)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301,G306: reports are user-facing documents; keep the default umask-style modes.
 		return "", "", err
 	}
 	js, err := json.MarshalIndent(doc, "", " ")
 	if err != nil {
 		return "", "", err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "usage.json"), js, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "usage.json"), js, 0o644); err != nil { //nolint:gosec // G301,G306: reports are user-facing documents; keep the default umask-style modes.
 		return "", "", err
 	}
 	if err := writeCSV(filepath.Join(dir, "usage.csv"), doc.Rows); err != nil {
 		return "", "", err
 	}
 	md := Markdown(doc, agg)
-	return dir, md, os.WriteFile(filepath.Join(dir, "report.md"), []byte(md), 0o644)
+	return dir, md, os.WriteFile(filepath.Join(dir, "report.md"), []byte(md), 0o644) //nolint:gosec // G301,G306: reports are user-facing documents; keep the default umask-style modes.
 }
 
 func writeCSV(path string, rows []FlatRow) error {

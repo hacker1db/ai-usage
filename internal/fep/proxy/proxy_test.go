@@ -102,9 +102,9 @@ func (h *harness) logText() string {
 
 func newHarness(t *testing.T, upstream http.HandlerFunc, mutate func(*Options)) *harness {
 	t.Helper()
-	cap := &captured{}
+	recorded := &captured{}
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cap.add(r)
+		recorded.add(r)
 		upstream(w, r)
 	}))
 	t.Cleanup(up.Close)
@@ -127,7 +127,7 @@ func newHarness(t *testing.T, upstream http.HandlerFunc, mutate func(*Options)) 
 	}
 	front := httptest.NewServer(New(opts))
 	t.Cleanup(front.Close)
-	return &harness{proxy: front, tokens: tokens, upstream: cap, logs: logs, logMu: logMu}
+	return &harness{proxy: front, tokens: tokens, upstream: recorded, logs: logs, logMu: logMu}
 }
 
 type lockedWriter struct {
@@ -393,7 +393,7 @@ func TestClientGoneDuringTokenWaitIsQuiet(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testKey)
 	if resp, err := http.DefaultClient.Do(req); err == nil {
 		resp.Body.Close()
-		t.Fatal("expected the client request to be cancelled")
+		t.Fatal("expected the client request to be canceled")
 	}
 
 	deadline := time.Now().Add(3 * time.Second)

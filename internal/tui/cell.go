@@ -51,7 +51,7 @@ func (t Theme) Series(slot int) string {
 	if slot < 0 || slot >= len(s) {
 		slot = 0
 	}
-	return s[slot]
+	return s[slot] //nolint:gosec // G602: slot is clamped to [0, len(s)) above.
 }
 
 // Text styles built from ink tokens. Text never wears a series color.
