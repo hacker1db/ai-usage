@@ -50,6 +50,24 @@ func GroupOf(tool, profile string) Group {
 	return Other
 }
 
+// DetailGroupOf is GroupOf for per-row tables: a pair without a slot keeps the Other color but is
+// labeled by its own tool and profile ("Gateway · work-foundry"), so rows from different gateway
+// providers stay apart. Charts keep using GroupOf and its fixed palette.
+func DetailGroupOf(tool, profile string) Group {
+	g := GroupOf(tool, profile)
+	if g.Key != Other.Key {
+		return g
+	}
+	label := tool
+	if tool == usage.ToolGateway {
+		label = "Gateway"
+	}
+	if profile != "" {
+		label += " · " + profile
+	}
+	return Group{Key: tool + ":" + profile, Label: label, Slot: Other.Slot}
+}
+
 // order returns a group's position in the fixed order (Other last).
 func (g Group) order() int {
 	if g.Slot == 0 {
