@@ -801,7 +801,7 @@ func (d *Dashboard) buildModels(rows []history.HourRow, from time.Time) {
 		if r.T.Before(from) {
 			continue
 		}
-		g := GroupOf(r.Tool, r.Profile)
+		g := DetailGroupOf(r.Tool, r.Profile)
 		k := key{g.Key, r.Model}
 		m := by[k]
 		if m == nil {
