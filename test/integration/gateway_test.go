@@ -314,6 +314,21 @@ func TestGatewayEndToEnd(t *testing.T) {
 		t.Fatal("gateway did not stop on SIGTERM")
 	}
 
+	// AIGW_IT_ARTIFACTS keeps the gateway's usage log (CI uploads it; it also feeds dashboard
+	// screenshots). The log holds no secrets, which the next subtest checks.
+	if dst := os.Getenv("AIGW_IT_ARTIFACTS"); dst != "" {
+		raw, err := os.ReadFile(gw.log)
+		if err == nil {
+			err = os.MkdirAll(dst, 0o700)
+		}
+		if err == nil {
+			err = os.WriteFile(filepath.Join(dst, "gateway.log"), raw, 0o600)
+		}
+		if err != nil {
+			t.Fatalf("keeping the gateway log: %v", err)
+		}
+	}
+
 	t.Run("log is costable and holds no secrets", func(t *testing.T) {
 		raw, err := os.ReadFile(gw.log)
 		if err != nil {
