@@ -4,7 +4,7 @@ A loopback-only proxy that lets OpenAI-compatible clients (Codex CLI, CLIProxyAP
 deployments on an **Entra-only** Azure AI Foundry resource. It replaces the .NET
 `codex-azure-entra-proxy` and is written against the Go standard library only.
 
-```
+```text
 Codex CLI ───────────────────────────────► foundry-entra-proxy :8787 ──► Foundry /openai/v1 (Entra bearer)
 Claude Code ─► CLIProxyAPI :8317 (Anthropic→OpenAI) ─┘
 ```
