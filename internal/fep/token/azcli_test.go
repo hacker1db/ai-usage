@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"slices"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -93,7 +94,7 @@ func TestTokenCachingAndRefresh(t *testing.T) {
 	for i, s := range steps {
 		now = now.Add(s.advance)
 		if s.invalid {
-			src.Invalidate()
+			src.Invalidate("tok")
 		}
 		if _, err := src.Token(ctx); err != nil {
 			t.Fatalf("step %d: %v", i, err)
@@ -139,6 +140,170 @@ func TestTokenPassesTenant(t *testing.T) {
 	}
 	if !slices.Contains(f.args[0], "--tenant") || !slices.Contains(f.args[0], "contoso") {
 		t.Fatalf("args missing tenant: %v", f.args[0])
+	}
+}
+
+func TestInvalidateOnlyDropsRejectedToken(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	exp := itoa(now.Add(time.Hour).Unix())
+	f := &fakeAz{stdout: `{"accessToken":"tok-1","expires_on":` + exp + `}`}
+	src := newTestSource(f, &now)
+	ctx := context.Background()
+
+	if tok, _ := src.Token(ctx); tok != "tok-1" {
+		t.Fatalf("token = %q", tok)
+	}
+	f.stdout = `{"accessToken":"tok-2","expires_on":` + exp + `}`
+	src.Invalidate("tok-1")
+	if tok, _ := src.Token(ctx); tok != "tok-2" || f.calls != 2 {
+		t.Fatalf("after invalidating tok-1: token = %q, az calls = %d", tok, f.calls)
+	}
+	// A late 401 for the old token must not discard its replacement.
+	src.Invalidate("tok-1")
+	if tok, _ := src.Token(ctx); tok != "tok-2" || f.calls != 2 {
+		t.Fatalf("stale invalidate: token = %q, az calls = %d", tok, f.calls)
+	}
+}
+
+// gatedAz blocks every az call until release is closed and counts calls.
+type gatedAz struct {
+	mu      sync.Mutex
+	calls   int
+	started chan struct{}
+	release chan struct{}
+	stdout  string
+	stderr  string
+	err     error
+}
+
+func newGatedAz(stdout string) *gatedAz {
+	return &gatedAz{stdout: stdout, started: make(chan struct{}, 16), release: make(chan struct{})}
+}
+
+func (g *gatedAz) run(ctx context.Context, _ string, _ ...string) ([]byte, []byte, error) {
+	g.mu.Lock()
+	g.calls++
+	g.mu.Unlock()
+	g.started <- struct{}{}
+	select {
+	case <-g.release:
+		return []byte(g.stdout), []byte(g.stderr), g.err
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	}
+}
+
+func (g *gatedAz) count() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.calls
+}
+
+func TestTokenSharesOneFlight(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	g := newGatedAz(`{"accessToken":"tok","expires_on":` + itoa(now.Add(time.Hour).Unix()) + `}`)
+	src := newTestSource(&fakeAz{}, &now)
+	src.Run = g.run
+
+	const n = 10
+	results := make(chan string, n)
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(func() {
+			tok, err := src.Token(context.Background())
+			if err != nil {
+				t.Error(err)
+			}
+			results <- tok
+		})
+	}
+	<-g.started
+	// Give the other callers time to join the flight before releasing it.
+	time.Sleep(50 * time.Millisecond)
+	close(g.release)
+	wg.Wait()
+	close(results)
+	for tok := range results {
+		if tok != "tok" {
+			t.Fatalf("token = %q", tok)
+		}
+	}
+	if c := g.count(); c != 1 {
+		t.Fatalf("az calls = %d, want 1", c)
+	}
+}
+
+func TestTokenSharesFlightError(t *testing.T) {
+	now := time.Now()
+	g := newGatedAz("")
+	g.stderr, g.err = "ERROR: Please run 'az login' to setup account.", &exec.ExitError{}
+	src := newTestSource(&fakeAz{}, &now)
+	src.Run = g.run
+
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, err := src.Token(context.Background())
+			errs <- err
+		}()
+	}
+	<-g.started
+	time.Sleep(50 * time.Millisecond)
+	close(g.release)
+	for range 2 {
+		if err := <-errs; !errors.Is(err, ErrLoginRequired) {
+			t.Fatalf("err = %v, want ErrLoginRequired", err)
+		}
+	}
+	if c := g.count(); c != 1 {
+		t.Fatalf("az calls = %d, want 1", c)
+	}
+}
+
+func TestTokenWaitHonorsCallerContext(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	g := newGatedAz(`{"accessToken":"tok","expires_on":` + itoa(now.Add(time.Hour).Unix()) + `}`)
+	src := newTestSource(&fakeAz{}, &now)
+	src.Run = g.run
+
+	// The first caller starts az and then gives up; that must not abort the shared acquisition.
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	leaderErr := make(chan error, 1)
+	go func() {
+		_, err := src.Token(leaderCtx)
+		leaderErr <- err
+	}()
+	<-g.started
+
+	// A waiter with a short deadline returns on its own deadline while az is still running.
+	waitCtx, cancelWait := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancelWait()
+	start := time.Now()
+	if _, err := src.Token(waitCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("waiter err = %v, want DeadlineExceeded", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("waiter blocked for %v despite its deadline", d)
+	}
+
+	cancelLeader()
+	if err := <-leaderErr; !errors.Is(err, context.Canceled) {
+		t.Fatalf("leader err = %v, want Canceled", err)
+	}
+
+	// A later caller joins the still-running flight and gets its result.
+	got := make(chan string, 1)
+	go func() {
+		tok, _ := src.Token(context.Background())
+		got <- tok
+	}()
+	time.Sleep(50 * time.Millisecond)
+	close(g.release)
+	if tok := <-got; tok != "tok" {
+		t.Fatalf("token = %q", tok)
+	}
+	if c := g.count(); c != 1 {
+		t.Fatalf("az calls = %d, want 1 (leader cancel must not restart az)", c)
 	}
 }
 

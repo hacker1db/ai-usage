@@ -106,7 +106,21 @@ func run() error {
 	}
 
 	logger.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	return shutdown(srv, 10*time.Second, logger)
+}
+
+// shutdown drains srv gracefully for up to timeout. Requests still running then (typically long
+// streams) are dropped with srv.Close; that is a normal stop, not a failure.
+func shutdown(srv *http.Server, timeout time.Duration, logger *slog.Logger) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	err := srv.Shutdown(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		logger.Warn("graceful shutdown timed out; closing remaining connections", "timeout", timeout.String())
+		if cerr := srv.Close(); cerr != nil {
+			logger.Warn("closing remaining connections", "error", cerr)
+		}
+		return nil
+	}
+	return err
 }

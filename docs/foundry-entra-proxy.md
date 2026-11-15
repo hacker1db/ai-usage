@@ -22,7 +22,7 @@ character launchd doesn't allow in a label becomes `-`). It retires any other
 ```zsh
 scripts/install-proxy.sh                   # resource from ANTHROPIC_FOUNDRY_RESOURCE, or --resource <name>
 scripts/install-proxy.sh --deployments gpt-6-luna,gpt-6.1-sol,gpt-6-astra   # default allowlist shown
-scripts/install-proxy.sh --check           # binary, key, agent, /healthz, /readyz
+scripts/install-proxy.sh --check           # binary, key, agent, /healthz, /readyz (on the agent's FEP_LISTEN)
 scripts/install-proxy.sh --uninstall       # unload the agent (keeps binary, key, logs)
 ```
 
@@ -105,8 +105,18 @@ The dotfiles `codex-foundry` launcher does this for you.
   | GET | `responses/{id}/input_items` | none |
   | POST | `responses/{id}/cancel` | none |
 
-- **Tokens:** cached until 5 minutes before expiry. An upstream `401` invalidates the cache, re-runs
-  `az` once, and retries; a second `401` is returned with `X-Proxy-Error: upstream_unauthorized`.
+- **Model check:** the model is read from the top-level `model` key, matched case-sensitively as
+  Foundry does. A body with more than one top-level key spelled `model` in any case (`MODEL`,
+  `Model`, or a duplicate `model`), or whose `model` is not a string, is rejected with `400
+  invalid_model`, so the proxy and Foundry cannot disagree on which deployment is used.
+- **Tokens:** cached until 5 minutes before expiry. Concurrent requests that need a new token share
+  one `az` run, which is bounded by its own 30-second timeout and not by any single client; a
+  client that disconnects or times out stops waiting without aborting it. An upstream `401` drops
+  the cached token only if it is still the one Foundry rejected, re-runs `az` once, and retries; a
+  second `401` is returned with `X-Proxy-Error: upstream_unauthorized`. When `az` times out, its
+  whole process group (the Homebrew wrapper and its python child) is killed.
+- **Shutdown:** on `SIGTERM` or `SIGINT` the proxy drains requests for up to 10 seconds, then closes
+  any still-open streams and exits 0.
 - **Streaming:** SSE is flushed as it arrives. Request cancellation propagates upstream.
 - **Logs:** JSON on stderr with a correlation ID, method, path, model, status, Foundry request ID,
   bytes, duration, and `client` (the User-Agent product token, such as `codex_cli_rs`). Headers,
@@ -144,6 +154,7 @@ can be told apart from Foundry's own responses:
 | 403 | `route_not_allowed` | Method or path is not on the allowlist |
 | 403 | `deployment_not_allowed` | Model is not on `FEP_ALLOWED_DEPLOYMENTS` |
 | 400 | `model_required`, `invalid_json` | The request body cannot be checked |
+| 400 | `invalid_model` | Duplicate or differently cased `model` key, or `model` is not a string |
 | 413 | `request_too_large` | Body over 64 MiB |
 | 502 | `upstream_unreachable` | Foundry could not be reached |
 | 503 | `az_login_required` | Run `az login` |
