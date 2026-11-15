@@ -1,0 +1,60 @@
+{
+  "listen": "127.0.0.1:8789",
+  "log_file": "~/Library/Logs/ai-gateway/gateway.log",
+  "clients": [
+    {
+      "name": "caido",
+      "key_sha256": "replace-with-the-hash-from-ai-gateway-keygen-name-caido-0000000",
+      "models": ["gpt-6.1-sol", "claude-sonnet-5-5"]
+    },
+    {
+      "name": "scripts",
+      "key_sha256": "replace-with-the-hash-from-ai-gateway-keygen-name-scripts-000000"
+    }
+  ],
+  "providers": {
+    "work-foundry": {
+      "kind": "openai",
+      "base_url": "https://YOUR-RESOURCE.services.ai.azure.com/openai/v1",
+      "auth": { "type": "azcli", "scope": "https://ai.azure.com/.default" }
+    },
+    "work-foundry-claude": {
+      "kind": "anthropic",
+      "base_url": "https://YOUR-RESOURCE.services.ai.azure.com/anthropic",
+      "auth": { "type": "azcli", "scope": "https://ai.azure.com/.default" }
+    },
+    "github-models": {
+      "kind": "openai",
+      "base_url": "https://models.github.ai/inference",
+      "auth": { "type": "command", "command": ["gh", "auth", "token"], "ttl": "10m" },
+      "max_tokens_field": "max_tokens"
+    },
+    "anthropic-api": {
+      "kind": "anthropic",
+      "base_url": "https://api.anthropic.com",
+      "auth": {
+        "type": "command",
+        "command": ["security", "find-generic-password", "-s", "ai-gateway-anthropic", "-w"],
+        "header": "x-api-key"
+      }
+    },
+    "openai-api": {
+      "kind": "openai",
+      "base_url": "https://api.openai.com/v1",
+      "auth": { "type": "file", "file": "~/.config/ai-gateway/openai.key" }
+    },
+    "local-foundry-proxy": {
+      "kind": "openai",
+      "base_url": "http://127.0.0.1:8787/openai/v1",
+      "auth": { "type": "file", "file": "~/.config/foundry-entra-proxy/client.key" }
+    }
+  },
+  "models": {
+    "gpt-6.1-sol": { "provider": "work-foundry" },
+    "gpt-6-luna": { "provider": "work-foundry" },
+    "claude-sonnet-5-5": { "provider": "work-foundry-claude" },
+    "claude-opus-5-5": { "provider": "anthropic-api" },
+    "gh-gpt": { "provider": "github-models", "model": "openai/gpt-6.1-sol" },
+    "gpt-6-astra": { "provider": "openai-api" }
+  }
+}
