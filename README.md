@@ -14,6 +14,14 @@ beyond `go build`:
 Every tool's logs are read read-only. Only counters, model names, timestamps, session ids, and
 (for session detail) redacted titles, prompts, file paths, and commands are kept.
 
+Homebrew formulas live in `Formula/`. Each release updates them to its tarball (`formulas.yml`), so
+`brew update` picks up new versions:
+
+```zsh
+brew tap hacker1db/ai-usage https://github.com/hacker1db/ai-usage
+brew install hacker1db/ai-usage/ai-usage hacker1db/ai-usage/foundry-entra-proxy
+```
+
 ```zsh
 make build                     # bin/ai-usage and bin/foundry-entra-proxy
 make check                     # gofmt, vet, race tests, JS syntax check, stdlib-only rule

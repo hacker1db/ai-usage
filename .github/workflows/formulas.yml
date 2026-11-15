@@ -1,0 +1,41 @@
+name: homebrew formulas
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.3.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Point the formulas at the release tarball
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "unexpected tag: $TAG"; exit 1; }
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/$TAG.tar.gz"
+          sha="$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)"
+          for f in Formula/ai-usage.rb Formula/foundry-entra-proxy.rb; do
+            sed -i -E \
+              -e "s|^  url \"https://github.com/[^\"]+/archive/refs/tags/[^\"]+\"|  url \"$url\"|" \
+              -e "s|^  sha256 \"[0-9a-f]{64}\"|  sha256 \"$sha\"|" "$f"
+          done
+          if git diff --quiet; then
+            echo "formulas already at $TAG"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(brew): point formulas at $TAG"
+          git push origin HEAD:main
