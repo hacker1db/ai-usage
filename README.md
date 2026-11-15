@@ -373,8 +373,10 @@ Tests beyond `make check`:
 CI runs both as the `coverage` and `integration` jobs and keeps the HTML report and the
 integration log as artifacts.
 
-The repo's [`.mcp.json`](.mcp.json) adds a pinned Playwright MCP server, which agents use to
-screenshot the dashboard and test reports for pull requests.
+The repo's [`.mcp.json`](.mcp.json) adds a pinned, headless Playwright MCP server, which agents
+use to screenshot the dashboard and test reports for pull requests. It drives Playwright's own
+Chromium (not Google Chrome); install it once with `npx -y playwright@1.64.1 install chromium`.
+Screenshots land in `reports/screenshots/`, which is git-ignored.
 
 ## Releases
 
