@@ -20,7 +20,7 @@ test:
 # when test/sdk has node_modules (npm ci --prefix test/sdk), drives the gateway with the official
 # OpenAI and Anthropic SDKs. The verbose log is kept as test-integration.log.
 test-integration:
-	go test -tags integration -race -count=1 -v ./test/integration/ > test-integration.log 2>&1; \
+	AIGW_IT_ARTIFACTS=$(CURDIR)/test-artifacts go test -tags integration -race -count=1 -v ./test/integration/ > test-integration.log 2>&1; \
 		status=$$?; cat test-integration.log; exit $$status
 
 # Unit-test coverage report (coverage.html) and the gateway floor.

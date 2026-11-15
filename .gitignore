@@ -15,3 +15,4 @@ bin/
 coverage.out
 coverage.html
 test-integration.log
+test-artifacts/

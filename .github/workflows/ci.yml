@@ -85,7 +85,9 @@ jobs:
         if: always()
         with:
           name: integration-log
-          path: test-integration.log
+          path: |
+            test-integration.log
+            test-artifacts/gateway.log
           retention-days: 14
 
   lint:
