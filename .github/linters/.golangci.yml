@@ -1,0 +1,102 @@
+# golangci-lint v2 configuration. Used by super-linter in CI (GO_MODULES) and by `make lint`
+# locally: golangci-lint run --config .github/linters/.golangci.yml ./...
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  relative-path-mode: gomod
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - errcheck
+    - errorlint
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        # Struct field ordering for padding is not worth the churn in this code base.
+        - fieldalignment
+        # Shadowing err in nested scopes is idiomatic Go; the analyzer is mostly noise.
+        - shadow
+    misspell:
+      locale: US
+    staticcheck:
+      checks:
+        - all
+        # Defaults golangci-lint also leaves off: package comments and initialism naming.
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        # Spelling out an embedded field (out[i].Key.Less) is often the clearer form.
+        - -QF1008
+    gosec:
+      excludes:
+        # Unchecked errors are errcheck's job; G104 duplicates it without its exclusions.
+        - G104
+        # Every subprocess is a fixed program (git, gh, az, open, ...) run with an argv slice and
+        # no shell, so argument injection is not possible.
+        - G204
+        # A local CLI that reads files the user named in flags, config, or their own git and gh
+        # config; no remote input reaches these paths.
+        - G304
+        - G703
+    revive:
+      # A light rule set: correctness and naming, not documentation coverage.
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unreachable-code
+        - name: var-declaration
+        - name: var-naming
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+    rules:
+      # Tests use fixed fake credentials, loose temp-file modes, and git/http fixtures.
+      - path: _test\.go
+        linters:
+          - gosec
+      # The proxy test harness closes every response body through t.Cleanup in harness.do.
+      - path: internal/fep/proxy/.*_test\.go
+        linters:
+          - bodyclose
+      # Termios ioctls need unsafe.Pointer; there is no stdlib wrapper (x/sys is not allowed).
+      - path: internal/tui/term\.go
+        linters:
+          - gosec
+        text: G103
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
