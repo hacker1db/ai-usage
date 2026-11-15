@@ -21,7 +21,8 @@ type Runner func(ctx context.Context, name string, args ...string) (stdout, stde
 
 type Source interface {
 	Token(ctx context.Context) (string, error)
-	Invalidate()
+	// Invalidate drops the cached token if it is still the one the upstream rejected.
+	Invalidate(rejected string)
 }
 
 type AzCLI struct {
@@ -32,9 +33,19 @@ type AzCLI struct {
 	ExecTimeout time.Duration
 	Run         Runner
 	Now         func() time.Time
-	mu          sync.Mutex
-	token       string
-	expiresAt   time.Time
+
+	mu        sync.Mutex // guards the fields below; never held while az runs
+	token     string
+	expiresAt time.Time
+	inflight  *flight
+}
+
+// flight is one shared az invocation. Its result fields are written before done is closed.
+type flight struct {
+	done      chan struct{}
+	token     string
+	expiresAt time.Time
+	err       error
 }
 
 func NewAzCLI(azPath, scope, tenant string) *AzCLI {
@@ -49,27 +60,51 @@ func NewAzCLI(azPath, scope, tenant string) *AzCLI {
 	}
 }
 
-// Token returns a cached token until it is within RefreshSkew of expiry.
+// Token returns a cached token until it is within RefreshSkew of expiry. Concurrent callers that
+// need a new token share one az invocation, which runs detached from any caller's context and is
+// bounded only by ExecTimeout; each caller stops waiting when its own ctx is done.
 func (a *AzCLI) Token(ctx context.Context) (string, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if a.token != "" && a.Now().Add(a.RefreshSkew).Before(a.expiresAt) {
-		return a.token, nil
+		tok := a.token
+		a.mu.Unlock()
+		return tok, nil
 	}
+	f := a.inflight
+	if f == nil {
+		f = &flight{done: make(chan struct{})}
+		a.inflight = f
+		go a.fly(context.WithoutCancel(ctx), f)
+	}
+	a.mu.Unlock()
 
-	tok, exp, err := a.acquire(ctx)
-	if err != nil {
-		return "", err
+	select {
+	case <-f.done:
+		return f.token, f.err
+	case <-ctx.Done():
+		return "", fmt.Errorf("waiting for az account get-access-token: %w", ctx.Err())
 	}
-	a.token, a.expiresAt = tok, exp
-	return tok, nil
 }
 
-// Invalidate drops the cached token so the next Token call re-runs az.
-func (a *AzCLI) Invalidate() {
+func (a *AzCLI) fly(ctx context.Context, f *flight) {
+	f.token, f.expiresAt, f.err = a.acquire(ctx)
+	a.mu.Lock()
+	if f.err == nil {
+		a.token, a.expiresAt = f.token, f.expiresAt
+	}
+	a.inflight = nil
+	a.mu.Unlock()
+	close(f.done)
+}
+
+// Invalidate drops the cached token when it is the rejected one, so the next Token call re-runs
+// az. A token that has already been replaced is left alone.
+func (a *AzCLI) Invalidate(rejected string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.token != rejected {
+		return
+	}
 	a.token = ""
 	a.expiresAt = time.Time{}
 }
@@ -151,8 +186,17 @@ func summarize(stderr []byte) string {
 	return msg
 }
 
+// execWaitDelay bounds how long ExecRunner waits for output pipes to close after the context is
+// done, in case a descendant outside the killed process group still holds them.
+const execWaitDelay = 3 * time.Second
+
+// ExecRunner runs the command in its own process group and, when ctx is done, kills the whole
+// group. The Homebrew az is a bash wrapper around python; killing only bash would leave python
+// holding stdout and stderr, and Run would block until python exited on its own.
 func ExecRunner(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	killProcessGroupOnCancel(cmd)
+	cmd.WaitDelay = execWaitDelay
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -23,11 +23,20 @@ const testKey = "client-key-0123456789abcdef0123456789"
 type fakeTokens struct {
 	mu          sync.Mutex
 	generation  int
-	invalidated int
+	invalidated int      // invalidations that dropped the current token
+	rejected    []string // every token passed to Invalidate
 	err         error
+	block       bool // Token waits for ctx to be done and returns its error
 }
 
-func (f *fakeTokens) Token(context.Context) (string, error) {
+func (f *fakeTokens) Token(ctx context.Context) (string, error) {
+	f.mu.Lock()
+	block := f.block
+	f.mu.Unlock()
+	if block {
+		<-ctx.Done()
+		return "", fmt.Errorf("waiting for token: %w", ctx.Err())
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
@@ -36,9 +45,14 @@ func (f *fakeTokens) Token(context.Context) (string, error) {
 	return fmt.Sprintf("entra-%d", f.generation), nil
 }
 
-func (f *fakeTokens) Invalidate() {
+// Invalidate mirrors token.AzCLI: only the token currently cached can be dropped.
+func (f *fakeTokens) Invalidate(rejected string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.rejected = append(f.rejected, rejected)
+	if rejected != fmt.Sprintf("entra-%d", f.generation) {
+		return
+	}
 	f.generation++
 	f.invalidated++
 }
@@ -270,6 +284,128 @@ func TestRouteAndDeploymentAllowlist(t *testing.T) {
 				t.Fatalf("forwarded = %v for status %d", forwarded, tt.want)
 			}
 		})
+	}
+}
+
+func TestModelKeyMustBeUnambiguous(t *testing.T) {
+	h := newHarness(t, okUpstream, nil)
+	tests := []struct {
+		name      string
+		path      string
+		body      string
+		want      int
+		wantError string
+	}{
+		{name: "case variant after exact key", path: "responses", body: `{"model":"gpt-4o","MODEL":"gpt-5.5"}`, want: 400, wantError: "invalid_model"},
+		{name: "case variant before exact key", path: "responses", body: `{"Model":"gpt-5.5","model":"gpt-4o"}`, want: 400, wantError: "invalid_model"},
+		{name: "lone case variant", path: "responses", body: `{"Model":"gpt-5.5"}`, want: 400, wantError: "invalid_model"},
+		{name: "duplicate exact key", path: "responses", body: `{"model":"gpt-5.5","input":"hi","model":"gpt-4o"}`, want: 400, wantError: "invalid_model"},
+		{name: "escaped duplicate key", path: "responses", body: `{"model":"gpt-5.5","model":"gpt-4o"}`, want: 400, wantError: "invalid_model"},
+		{name: "number model", path: "responses", body: `{"model":5}`, want: 400, wantError: "invalid_model"},
+		{name: "null model", path: "responses", body: `{"model":null}`, want: 400, wantError: "invalid_model"},
+		{name: "object model", path: "responses", body: `{"model":{"name":"gpt-5.5"}}`, want: 400, wantError: "invalid_model"},
+		{name: "nested model key ignored", path: "responses", body: `{"model":"gpt-5.5","metadata":{"model":"gpt-4o","MODEL":"x"}}`, want: 200},
+		{name: "escaped exact key", path: "responses", body: `{"model":"gpt-5.5"}`, want: 200},
+		{name: "top-level array", path: "responses", body: `[{"model":"gpt-5.5"}]`, want: 400, wantError: "invalid_json"},
+		{name: "trailing data", path: "responses", body: `{"model":"gpt-5.5"}{"model":"gpt-4o"}`, want: 400, wantError: "invalid_json"},
+		{name: "optional route tolerates bad json", path: "responses/resp_1/cancel", body: `not json`, want: 200},
+		{name: "optional route checks named model", path: "responses/resp_1/cancel", body: `{"model":"gpt-4o"}`, want: 403, wantError: "deployment_not_allowed"},
+		{name: "optional route rejects ambiguous model", path: "responses/resp_1/cancel", body: `{"model":"gpt-5.5","MODEL":"gpt-4o"}`, want: 400, wantError: "invalid_model"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := h.upstream.count()
+			resp := h.do(t, http.MethodPost, "/openai/v1/"+tt.path, tt.body, bearer(testKey))
+			if resp.StatusCode != tt.want {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tt.want)
+			}
+			if got := resp.Header.Get(headerProxyError); got != tt.wantError {
+				t.Fatalf("proxy error = %q, want %q", got, tt.wantError)
+			}
+			if forwarded := h.upstream.count() > before; forwarded != (tt.want == 200) {
+				t.Fatalf("forwarded = %v for status %d", forwarded, tt.want)
+			}
+		})
+	}
+}
+
+func TestConcurrent401sInvalidateOnce(t *testing.T) {
+	const n = 8
+	var arrived sync.WaitGroup
+	arrived.Add(n)
+	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer entra-0" {
+			// Hold every first attempt until all n have been sent with the same stale token.
+			arrived.Done()
+			arrived.Wait()
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer entra-1" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		okUpstream(w, r)
+	}, nil)
+
+	var wg sync.WaitGroup
+	statuses := make(chan int, n)
+	for range n {
+		wg.Go(func() {
+			req, _ := http.NewRequest(http.MethodPost, h.proxy.URL+"/openai/v1/responses", strings.NewReader(`{"model":"gpt-5.5"}`))
+			req.Header.Set("Authorization", "Bearer "+testKey)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			resp.Body.Close()
+			statuses <- resp.StatusCode
+		})
+	}
+	wg.Wait()
+	close(statuses)
+	for s := range statuses {
+		if s != http.StatusOK {
+			t.Errorf("status = %d, want 200", s)
+		}
+	}
+
+	h.tokens.mu.Lock()
+	defer h.tokens.mu.Unlock()
+	if h.tokens.invalidated != 1 || len(h.tokens.rejected) != n {
+		t.Fatalf("invalidated = %d, Invalidate calls = %d; want 1 and %d", h.tokens.invalidated, len(h.tokens.rejected), n)
+	}
+	for _, r := range h.tokens.rejected {
+		if r != "entra-0" {
+			t.Fatalf("Invalidate(%q), want the rejected token entra-0", r)
+		}
+	}
+}
+
+func TestClientGoneDuringTokenWaitIsQuiet(t *testing.T) {
+	h := newHarness(t, okUpstream, nil)
+	h.tokens.block = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, h.proxy.URL+"/openai/v1/responses", strings.NewReader(`{"model":"gpt-5.5"}`))
+	req.Header.Set("Authorization", "Bearer "+testKey)
+	if resp, err := http.DefaultClient.Do(req); err == nil {
+		resp.Body.Close()
+		t.Fatal("expected the client request to be cancelled")
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for !strings.Contains(h.logText(), `"status":499`) {
+		if time.Now().After(deadline) {
+			t.Fatalf("request not logged as 499:\n%s", h.logText())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	logs := h.logText()
+	if strings.Contains(logs, "entra token unavailable") || strings.Contains(logs, "token_unavailable") {
+		t.Fatalf("client disconnect logged as a token failure:\n%s", logs)
 	}
 }
 

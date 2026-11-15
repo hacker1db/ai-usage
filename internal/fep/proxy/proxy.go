@@ -162,14 +162,20 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	model := rule.pathModel
 	if model == "" && len(body) > 0 {
-		var payload struct {
-			Model string `json:"model"`
-		}
-		if err := json.Unmarshal(body, &payload); err != nil && rule.requiresModel {
-			writeError(rec, http.StatusBadRequest, "invalid_json", "request body is not valid JSON")
+		m, err := extractModel(body)
+		switch {
+		case errors.Is(err, errNotJSONObject):
+			// Routes that do not need a model tolerate bodies the proxy cannot parse.
+			if rule.requiresModel {
+				writeError(rec, http.StatusBadRequest, "invalid_json", "request body is not a valid JSON object")
+				return
+			}
+		case err != nil:
+			writeError(rec, http.StatusBadRequest, "invalid_model", err.Error())
 			return
+		default:
+			model = m
 		}
-		model = payload.Model
 	}
 	info.model = model
 	if model == "" && rule.requiresModel {
@@ -224,16 +230,17 @@ func (p *Proxy) modifyResponse(resp *http.Response) error {
 func (p *Proxy) handleUpstreamError(w http.ResponseWriter, r *http.Request, err error) {
 	var tokErr *tokenError
 	switch {
+	case r.Context().Err() != nil:
+		// The client went away (possibly while waiting for az); that is not a token or upstream failure.
+		if rec, ok := w.(*recorder); ok {
+			rec.status = 499
+		}
 	case errors.Is(err, token.ErrLoginRequired):
 		p.log.Error("entra token unavailable: az login required", "error", err)
 		writeError(w, http.StatusServiceUnavailable, "az_login_required", "Azure CLI session missing or expired; run `az login` and retry")
 	case errors.As(err, &tokErr):
 		p.log.Error("entra token unavailable", "error", err)
 		writeError(w, http.StatusServiceUnavailable, "token_unavailable", "proxy could not acquire an Entra token; check `az account get-access-token`")
-	case r.Context().Err() != nil:
-		if rec, ok := w.(*recorder); ok {
-			rec.status = 499
-		}
 	case isTimeout(err):
 		p.log.Warn("upstream timeout", "error", err)
 		writeError(w, http.StatusGatewayTimeout, "upstream_timeout", "Foundry did not respond in time")
@@ -318,6 +325,53 @@ func matchRoute(r *http.Request) (routeRule, bool) {
 	return routeRule{}, false
 }
 
+var (
+	errNotJSONObject = errors.New("request body is not a valid JSON object")
+	errModelKey      = errors.New("request body has a duplicate or wrongly cased model key")
+	errModelType     = errors.New("request body model is not a string")
+)
+
+// extractModel reads the top-level "model" string the way a case-sensitive upstream parser would.
+// encoding/json matches keys case-insensitively and lets the last duplicate win, so a struct
+// unmarshal could check a different value than the one Foundry uses. Any top-level key that equals
+// "model" ignoring case, other than a single exact "model", is refused rather than guessed at.
+func extractModel(body []byte) (string, error) {
+	if !json.Valid(body) {
+		return "", errNotJSONObject
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return "", errNotJSONObject
+	}
+	var model string
+	seen := false
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return "", errNotJSONObject
+		}
+		key, _ := tok.(string)
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return "", errNotJSONObject
+		}
+		if !strings.EqualFold(key, "model") {
+			continue
+		}
+		if seen || key != "model" {
+			return "", errModelKey
+		}
+		seen = true
+		if len(raw) == 0 || raw[0] != '"' {
+			return "", errModelType
+		}
+		if err := json.Unmarshal(raw, &model); err != nil {
+			return "", errModelType
+		}
+	}
+	return model, nil
+}
+
 type tokenError struct{ err error }
 
 func (e *tokenError) Error() string { return "entra token: " + e.err.Error() }
@@ -332,13 +386,15 @@ type authTransport struct {
 }
 
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.attempt(req)
+	resp, used, err := t.attempt(req)
 	if err != nil || resp.StatusCode != http.StatusUnauthorized {
 		return resp, err
 	}
 
 	resp.Body.Close()
-	t.tokens.Invalidate()
+	// Only drop the token Foundry rejected: concurrent 401s for the same token must not each
+	// discard the replacement another request just acquired.
+	t.tokens.Invalidate(used)
 	info := infoFrom(req.Context())
 	if info != nil {
 		info.retried = true
@@ -350,7 +406,7 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return nil, err
 		}
 	}
-	resp, err = t.attempt(retry)
+	resp, _, err = t.attempt(retry)
 	if err == nil && resp.StatusCode == http.StatusUnauthorized {
 		t.log.Error("Foundry rejected a freshly acquired Entra token; check RBAC on the resource and FEP_TOKEN_SCOPE")
 		resp.Header.Set(headerProxyError, "upstream_unauthorized")
@@ -358,10 +414,12 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
-func (t *authTransport) attempt(req *http.Request) (*http.Response, error) {
+// attempt sends req with the current Entra token and also returns that token, so a 401 can
+// invalidate exactly the token that was rejected.
+func (t *authTransport) attempt(req *http.Request) (*http.Response, string, error) {
 	tok, err := t.tokens.Token(req.Context())
 	if err != nil {
-		return nil, &tokenError{err: err}
+		return nil, "", &tokenError{err: err}
 	}
 
 	ctx, cancel := context.WithCancel(req.Context())
@@ -371,14 +429,14 @@ func (t *authTransport) attempt(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(out)
 	if err != nil {
 		cancel()
-		return nil, err
+		return nil, tok, err
 	}
 	if t.idle > 0 {
 		resp.Body = newIdleBody(resp.Body, t.idle, cancel, infoFrom(req.Context()))
 	} else {
 		resp.Body = &cancelBody{ReadCloser: resp.Body, cancel: cancel}
 	}
-	return resp, nil
+	return resp, tok, nil
 }
 
 type cancelBody struct {

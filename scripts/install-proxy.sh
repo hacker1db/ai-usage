@@ -12,7 +12,7 @@
 #   --deployments FEP_ALLOWED_DEPLOYMENTS                     default: gpt-6-luna,gpt-6.1-sol,gpt-6-astra
 #   --tenant      FEP_TENANT                                  optional Entra tenant ID
 #   --listen      FEP_LISTEN                                  default: 127.0.0.1:8787
-set -euo pipefail
+set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
@@ -30,20 +30,26 @@ domain="gui/$(id -u)"
 resource="${FEP_RESOURCE:-${ANTHROPIC_FOUNDRY_RESOURCE:-}}"
 deployments="${FEP_ALLOWED_DEPLOYMENTS:-gpt-6-luna,gpt-6.1-sol,gpt-6-astra}"
 tenant="${FEP_TENANT:-}"
-listen="${FEP_LISTEN:-127.0.0.1:8787}"
+default_listen="127.0.0.1:8787"
+listen="${FEP_LISTEN:-$default_listen}"
+listen_from_user=0
+[[ -z "${FEP_LISTEN:-}" ]] || listen_from_user=1
 mode=install
 
-die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
+die() { printf 'install-proxy.sh: %s\n' "$*" >&2; exit 1; }
+
+# usage prints the comment block at the top of this file, without the leading "# ".
+usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --resource) resource="${2:?}"; shift 2 ;;
         --deployments) deployments="${2:?}"; shift 2 ;;
         --tenant) tenant="${2:?}"; shift 2 ;;
-        --listen) listen="${2:?}"; shift 2 ;;
+        --listen) listen="${2:?}"; listen_from_user=1; shift 2 ;;
         --check) mode=check; shift ;;
         --uninstall) mode=uninstall; shift ;;
-        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+        -h|--help) usage; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
@@ -64,6 +70,14 @@ fi
 
 if [[ "$mode" == check ]]; then
     status=0
+    # Without an explicit --listen or FEP_LISTEN, probe the address the installed agent uses.
+    if ((listen_from_user == 0)) && [[ -f "$plist" ]]; then
+        if installed_listen="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:FEP_LISTEN' "$plist" 2>/dev/null)" \
+            && [[ "$installed_listen" =~ ^(127\.0\.0\.1|\[::1\]|localhost):[0-9]+$ ]]; then
+            listen="$installed_listen"
+        fi
+    fi
+    echo "listen:  $listen"
     if [[ -x "$bin_path" ]]; then
         echo "binary:  $bin_path ($("$bin_path" -version))"
     else
@@ -141,12 +155,30 @@ plutil -lint "$plist.tmp" >/dev/null || die "generated plist is invalid: $plist.
 mv "$plist.tmp" "$plist"
 chmod 644 "$plist"
 
-launchctl bootout "$domain/$label" 2>/dev/null || true
-launchctl bootstrap "$domain" "$plist"
+# bootout returns before the old instance has finished tearing down, and bootstrapping while it
+# is still registered fails with "Bootstrap failed: 5: Input/output error". Wait for it to go.
+if launchctl print "$domain/$label" >/dev/null 2>&1; then
+    launchctl bootout "$domain/$label" 2>/dev/null || true
+    for _ in $(seq 1 50); do
+        launchctl print "$domain/$label" >/dev/null 2>&1 || break
+        sleep 0.2
+    done
+    if launchctl print "$domain/$label" >/dev/null 2>&1; then
+        echo "install-proxy.sh: warning: $label still registered 10s after bootout; trying bootstrap anyway" >&2
+    fi
+fi
+launchctl bootstrap "$domain" "$plist" \
+    || die "launchctl bootstrap failed; $label is NOT loaded and the proxy is down. Retry scripts/install-proxy.sh or run: launchctl bootstrap $domain $plist"
 echo "Loaded $label ($plist); logs: $log_dir/proxy.log"
 
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-    [[ "$(probe /healthz)" == *ok* ]] && { echo "healthz: ok"; break; }
+healthy=0
+for _ in $(seq 1 20); do
+    if [[ "$(probe /healthz)" == *ok* ]]; then
+        healthy=1
+        break
+    fi
     sleep 0.5
 done
+((healthy == 1)) || die "proxy did not report ok on http://$listen/healthz within 10s; check $log_dir/proxy.log"
+echo "healthz: ok"
 echo "readyz:  $(probe /readyz)"
