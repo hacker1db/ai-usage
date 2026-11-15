@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	caidoKey  = "aigw_test-key-for-caido-0123456789abcdef"
-	scriptKey = "aigw_test-key-for-script-0123456789abcdef"
+	caidoKey  = "aigw_test-key-for-caido-0123456789abcdef"  // gitleaks:allow (test fixture, not a credential)
+	scriptKey = "aigw_test-key-for-script-0123456789abcdef" // gitleaks:allow (test fixture, not a credential)
 )
 
 // fakeUpstream records what the gateway sent and answers with a canned handler.

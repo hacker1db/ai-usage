@@ -73,15 +73,17 @@ type errReader struct{ err error }
 func (r errReader) Read([]byte) (int, error) { return 0, r.err }
 
 func TestUpstreamErrorMessage(t *testing.T) {
-	for raw, want := range map[string]string{
-		`{"error":{"message":"m1"}}`:                           "m1",
-		`{"error":"m2"}`:                                       "m2",
-		`{"message":"m3"}`:                                     "m3",
-		`<html>bad gateway</html>`:                             "<html>bad gateway</html>",
-		`{"type":"error","error":{"type":"x","message":"m4"}}`: "m4",
-	} {
-		if got := upstreamErrorMessage([]byte(raw)); got != want {
-			t.Errorf("%s: got %q want %q", raw, got, want)
+	// One case per line, so gofmt versions cannot disagree on key alignment.
+	cases := [][2]string{
+		{`{"error":{"message":"m1"}}`, "m1"},
+		{`{"error":"m2"}`, "m2"},
+		{`{"message":"m3"}`, "m3"},
+		{`<html>bad gateway</html>`, "<html>bad gateway</html>"},
+		{`{"type":"error","error":{"type":"x","message":"m4"}}`, "m4"},
+	}
+	for _, c := range cases {
+		if got := upstreamErrorMessage([]byte(c[0])); got != c[1] {
+			t.Errorf("%s: got %q want %q", c[0], got, c[1])
 		}
 	}
 }
