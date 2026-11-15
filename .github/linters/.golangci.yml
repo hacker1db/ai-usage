@@ -6,6 +6,9 @@ run:
   timeout: 5m
   tests: true
   relative-path-mode: gomod
+  # Lint the end-to-end tests too; without the tag test/integration has no Go files to load.
+  build-tags:
+    - integration
 
 linters:
   default: none
