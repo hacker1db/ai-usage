@@ -1,0 +1,11 @@
+{
+  "name": "ai-gateway-sdk-compat",
+  "private": true,
+  "description": "Runs the official OpenAI and Anthropic SDKs against a live ai-gateway (driven by test/integration).",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
+    "openai": "7.47.0"
+  }
+}

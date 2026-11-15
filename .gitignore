@@ -10,3 +10,8 @@ dashboard.json
 
 # Build output
 bin/
+
+# Test output
+coverage.out
+coverage.html
+test-integration.log
