@@ -18,7 +18,7 @@ import (
 // Defaults for optional settings.
 const (
 	DefaultListen                = "127.0.0.1:8789"
-	DefaultMaxRequestBytes       = 32 << 20
+	DefaultMaxRequestBytes       = 4 << 20
 	DefaultMaxConcurrent         = 64
 	DefaultStreamIdleTimeout     = 2 * time.Minute
 	DefaultResponseHeaderTimeout = 10 * time.Minute

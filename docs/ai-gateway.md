@@ -45,7 +45,7 @@ others, because a `command` credential runs what the file names.
 | `listen` | `127.0.0.1:8789` | Must be a loopback address |
 | `log_file` | stderr | Usage log, appended with mode 600. `ai-usage` reads `~/Library/Logs/ai-gateway/gateway.log` by default (`-gateway-log` to change) |
 | `log_level` | `info` | `debug`, `info`, `warn`, `error` |
-| `max_request_bytes` | 32 MiB | Request body limit |
+| `max_request_bytes` | 4 MiB | Request body limit; raise explicitly for large images |
 | `max_concurrent_requests` | `64` | Requests in flight at once; more get 503 with `Retry-After: 1` |
 | `allowed_origins` | none | Exact browser origins allowed to call the gateway with CORS, such as `http://localhost:5173`. No `*` or `null`; `http` only for loopback hosts. Leave empty unless a web app must call the gateway |
 | `stream_idle_timeout` | `2m` | Cuts an upstream stream with no bytes for this long |
@@ -172,6 +172,15 @@ models show tokens without a price.
 - Client `Authorization`, `x-api-key`, `api-key`, and cookies never reach an upstream; the gateway
   builds upstream requests from scratch. Upstream credential errors are logged, not returned.
 - Config and key files must not be group/other writable (config) or readable (keys).
+
+Client body reads have a 30-second deadline. Each response write and stream flush gets a fresh
+30-second write window, so a stalled reader releases its slot. `/healthz` uses no request slot.
+The 4 MiB default reduces concurrent request buffering; translation and JSON rewriting still
+allocate additional copies, so tune the body and concurrency limits together for available RAM.
+Buffered upstream responses remain limited to 64 MiB per request; these limits are not a global
+memory budget. Request log strings are capped at 256 bytes; pre-authentication refusals log at
+DEBUG. Upstream error messages are capped at 1024 bytes after redacting credentials used by the
+call (including a credential refreshed after a 401), in buffered and streaming responses.
 
 ### Subscriptions (Claude Pro/Max, ChatGPT, Copilot plans)
 
