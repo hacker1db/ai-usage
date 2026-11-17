@@ -98,11 +98,8 @@ func (c *commandCred) Token(ctx context.Context) (string, error) {
 	defer cancel()
 	stdout, stderr, err := c.run(ctx, c.argv[0], c.argv[1:]...)
 	if err != nil {
-		msg := strings.Join(strings.Fields(string(stderr)), " ")
-		if len(msg) > 200 {
-			msg = msg[:200] + "..."
-		}
-		return "", fmt.Errorf("%w: %s failed: %w: %s", errNoCredential, c.argv[0], err, msg)
+		// stderr is not quoted: a failing secret helper may echo the secret, and this error is logged.
+		return "", fmt.Errorf("%w: %s failed: %w (%d bytes of stderr withheld; run the command by hand to see it)", errNoCredential, c.argv[0], err, len(stderr))
 	}
 	line, _, _ := strings.Cut(strings.TrimSpace(string(stdout)), "\n")
 	line = strings.TrimSpace(line)

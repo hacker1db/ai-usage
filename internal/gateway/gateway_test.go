@@ -150,12 +150,17 @@ func (h *harness) do(t *testing.T, method, path, key string, body string, hdr ..
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:50000"
+	req.Host = "127.0.0.1:8789"
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Caido/0.50.1 (darwin)")
 	if key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
 	for i := 0; i+1 < len(hdr); i += 2 {
+		if hdr[i] == "Host" {
+			req.Host = hdr[i+1]
+			continue
+		}
 		req.Header.Set(hdr[i], hdr[i+1])
 	}
 	rec := httptest.NewRecorder()
@@ -718,13 +723,19 @@ func TestClientCancelIsLogged499(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-fast","messages":[]}`)).WithContext(ctx)
 	req.RemoteAddr = "127.0.0.1:1"
+	req.Host = "127.0.0.1:8789"
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+caidoKey)
 	done := make(chan struct{})
 	go func() {
 		h.gw.ServeHTTP(httptest.NewRecorder(), req)
 		close(done)
 	}()
-	<-arrived
+	select {
+	case <-arrived:
+	case <-done:
+		t.Fatal("request finished before reaching the upstream")
+	}
 	cancel()
 	<-done
 	if l := h.logBuf.lines(t)[0]; l.Status != 499 {
