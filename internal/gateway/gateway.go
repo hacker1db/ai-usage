@@ -34,7 +34,9 @@ const (
 	// maxUpstreamBody bounds a buffered (non-streamed) upstream response.
 	maxUpstreamBody = 64 << 20
 	// maxErrorBody bounds what is read from an upstream error response.
-	maxErrorBody = 1 << 20
+	maxErrorBody    = 1 << 20
+	clientIOTimeout = 30 * time.Second
+	maxErrorMessage = 1024
 )
 
 // Options configures a Gateway. Getenv and Runner are injectable for tests.
@@ -94,6 +96,7 @@ const (
 
 // call is the per-request state that ends up in the log line.
 type call struct {
+	credentials    []string // Tokens used by this call, including the pre-refresh token.
 	id             string
 	format         format
 	client         string
@@ -124,16 +127,16 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !g.browserGuard(rec, r, c) {
 		return
 	}
+	if r.URL.Path == "/healthz" {
+		writeJSON(rec, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
 	select {
 	case g.slots <- struct{}{}:
 		defer func() { <-g.slots }()
 	default:
 		rec.Header().Set("Retry-After", "1")
 		g.fail(rec, c, http.StatusServiceUnavailable, "too_many_requests", "the gateway is at its concurrent request limit")
-		return
-	}
-	if r.URL.Path == "/healthz" {
-		writeJSON(rec, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
 
@@ -154,6 +157,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rc := http.NewResponseController(rec)
+	_ = rc.SetReadDeadline(time.Now().Add(clientIOTimeout))
 	body, err := io.ReadAll(http.MaxBytesReader(rec, r.Body, g.cfg.MaxRequestBytes))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
@@ -164,6 +169,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.fail(rec, c, http.StatusBadRequest, "request_unreadable", "could not read the request body")
 		return
 	}
+	_ = rc.SetReadDeadline(time.Time{})
 	doc, err := decodeObject(body)
 	if err != nil {
 		g.fail(rec, c, http.StatusBadRequest, "invalid_request", err.Error())
@@ -311,6 +317,9 @@ func (g *Gateway) attempt(ctx context.Context, c *call, up *upstream, path strin
 	if err != nil {
 		return nil, "", err
 	}
+	if tok != "" {
+		c.credentials = append(c.credentials, tok)
+	}
 	u := *up.cfg.base
 	u.Path = strings.TrimRight(u.Path, "/") + path
 
@@ -428,7 +437,11 @@ func (g *Gateway) passthrough(w http.ResponseWriter, r *http.Request, c *call, u
 	defer resp.Body.Close()
 
 	copyRelayedHeaders(w.Header(), resp.Header)
-	if resp.StatusCode < 200 || resp.StatusCode > 299 || !isEventStream(resp) {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		g.relayError(w, c, resp)
+		return
+	}
+	if !isEventStream(resp) {
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBody+1))
 		if err != nil {
 			g.upstreamFailed(w, r, c, err)
@@ -454,6 +467,9 @@ func (g *Gateway) passthrough(w http.ResponseWriter, r *http.Request, c *call, u
 	flush := flusher(w)
 	_ = readSSE(resp.Body, func(line, data []byte) bool {
 		if data != nil {
+			if clean, ok := c.streamError(data); ok {
+				line = append(append([]byte("data: "), clean...), '\n')
+			}
 			scanUsage(up.cfg.Kind, data, &c.usage)
 			if !wantUsage && isUsageOnlyChunk(data) {
 				return true
@@ -510,6 +526,9 @@ func (g *Gateway) anthropicViaOpenAI(w http.ResponseWriter, r *http.Request, c *
 			if data == nil || string(data) == "[DONE]" {
 				return true
 			}
+			if clean, ok := c.streamError(data); ok {
+				data = clean
+			}
 			return s.openAIChunk(data)
 		})
 		s.finish()
@@ -558,6 +577,9 @@ func (g *Gateway) openAIViaAnthropic(w http.ResponseWriter, r *http.Request, c *
 			if data == nil {
 				return true
 			}
+			if clean, ok := c.streamError(data); ok {
+				data = clean
+			}
 			return s.anthropicEvent(data)
 		})
 		s.finish()
@@ -576,7 +598,7 @@ func (g *Gateway) openAIViaAnthropic(w http.ResponseWriter, r *http.Request, c *
 // relayError re-shapes an upstream error into the caller's format, keeping the status code.
 func (g *Gateway) relayError(w http.ResponseWriter, c *call, resp *http.Response) {
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-	msg := upstreamErrorMessage(raw)
+	msg := c.safeError(upstreamErrorMessage(raw))
 	if msg == "" {
 		msg = http.StatusText(resp.StatusCode)
 	}
@@ -590,9 +612,6 @@ func upstreamErrorMessage(raw []byte) string {
 	}
 	if json.Unmarshal(raw, &env) != nil {
 		s := strings.TrimSpace(string(raw))
-		if len(s) > 300 {
-			s = s[:300]
-		}
 		return s
 	}
 	var e apiError
@@ -664,25 +683,27 @@ func (g *Gateway) logCall(r *http.Request, c *call, rec *recorder, start time.Ti
 		return
 	}
 	level := slog.LevelInfo
-	if rec.status >= 500 || c.idleTimedOut.Load() {
+	if c.client == "" {
+		level = slog.LevelDebug
+	} else if rec.status >= 500 || c.idleTimedOut.Load() {
 		level = slog.LevelWarn
 	}
 	attrs := []any{
-		"id", c.id,
-		"method", r.Method,
-		"path", r.URL.Path,
-		"format", string(c.format),
-		proxylog.KeyClient, c.client,
-		"agent", clientName(r.UserAgent()),
-		proxylog.KeyModel, c.model,
-		proxylog.KeyProvider, c.provider,
-		proxylog.KeyUpstreamModel, c.upstreamModel,
+		"id", clipLog(c.id),
+		"method", clipLog(r.Method),
+		"path", clipLog(r.URL.Path),
+		"format", clipLog(string(c.format)),
+		proxylog.KeyClient, clipLog(c.client),
+		"agent", clipLog(clientName(r.UserAgent())),
+		proxylog.KeyModel, clipLog(c.model),
+		proxylog.KeyProvider, clipLog(c.provider),
+		proxylog.KeyUpstreamModel, clipLog(c.upstreamModel),
 		"translated", c.translated,
 		"stream", c.stream,
 		"status", rec.status,
-		"gateway_error", rec.Header().Get(headerGatewayError),
+		"gateway_error", clipLog(rec.Header().Get(headerGatewayError)),
 		"upstream_status", c.upstreamStatus,
-		"upstream_request_id", c.upstreamReqID,
+		"upstream_request_id", clipLog(c.upstreamReqID),
 		"auth_retried", c.authRetried,
 		"stream_idle_timeout", c.idleTimedOut.Load(),
 		"bytes", rec.bytes,
@@ -701,6 +722,7 @@ type recorder struct {
 }
 
 func (r *recorder) WriteHeader(code int) {
+	r.extendWriteDeadline()
 	if !r.wroteHeader {
 		r.status, r.wroteHeader = code, true
 	}
@@ -708,17 +730,25 @@ func (r *recorder) WriteHeader(code int) {
 }
 
 func (r *recorder) Write(b []byte) (int, error) {
+	r.extendWriteDeadline()
 	r.wroteHeader = true
 	n, err := r.ResponseWriter.Write(b)
 	r.bytes += int64(n)
 	return n, err
 }
 
+func (r *recorder) extendWriteDeadline() {
+	_ = http.NewResponseController(r.ResponseWriter).SetWriteDeadline(time.Now().Add(clientIOTimeout))
+}
+
 func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func flusher(w http.ResponseWriter) func() {
 	rc := http.NewResponseController(w)
-	return func() { _ = rc.Flush() }
+	return func() {
+		_ = rc.SetWriteDeadline(time.Now().Add(clientIOTimeout))
+		_ = rc.Flush()
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -828,4 +858,31 @@ func anthropicBetas(values []string) string {
 		}
 	}
 	return strings.Join(keep, ",")
+}
+
+// clipLog bounds every string attribute, including the truncation marker.
+func clipLog(s string) string { return clipString(s, 256) }
+
+func clipString(s string, limit int) string {
+	if len(s) > limit {
+		return strings.ToValidUTF8(s[:limit-3], "") + "..."
+	}
+	return s
+}
+
+func (c *call) safeError(msg string) string {
+	for _, secret := range c.credentials {
+		msg = strings.ReplaceAll(msg, secret, "[REDACTED]")
+	}
+	return clipString(msg, maxErrorMessage)
+}
+
+// Normalize only error events; successful content and usage retain their original wire shape.
+func (c *call) streamError(data []byte) ([]byte, bool) {
+	var env map[string]json.RawMessage
+	if json.Unmarshal(data, &env) != nil || len(env["error"]) == 0 {
+		return nil, false
+	}
+	clean, _ := json.Marshal(map[string]any{"type": "error", "error": apiError{Type: "api_error", Message: c.safeError(upstreamErrorMessage(data))}})
+	return clean, true
 }

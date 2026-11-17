@@ -650,11 +650,11 @@ func TestTranslatedUpstreamErrorKeepsStatusAndCallerShape(t *testing.T) {
 	}
 }
 
-func TestPassthroughUpstreamErrorIsRelayedVerbatim(t *testing.T) {
+func TestPassthroughUpstreamErrorIsNormalized(t *testing.T) {
 	body := `{"error":{"message":"deployment missing","code":"DeploymentNotFound"}}`
 	h := newHarness(t, jsonResponse(404, body), unused)
 	rec := h.do(t, http.MethodPost, "/v1/chat/completions", caidoKey, `{"model":"gpt-fast","messages":[]}`)
-	if rec.Code != 404 || rec.Body.String() != body {
+	if rec.Code != 404 || !strings.Contains(rec.Body.String(), "deployment missing") || rec.Header().Get(headerGatewayError) != "upstream_error" {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
 }
