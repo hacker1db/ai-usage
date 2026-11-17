@@ -46,6 +46,8 @@ others, because a `command` credential runs what the file names.
 | `log_file` | stderr | Usage log, appended with mode 600. `ai-usage` reads `~/Library/Logs/ai-gateway/gateway.log` by default (`-gateway-log` to change) |
 | `log_level` | `info` | `debug`, `info`, `warn`, `error` |
 | `max_request_bytes` | 32 MiB | Request body limit |
+| `max_concurrent_requests` | `64` | Requests in flight at once; more get 503 with `Retry-After: 1` |
+| `allowed_origins` | none | Exact browser origins allowed to call the gateway with CORS, such as `http://localhost:5173`. No `*` or `null`; `http` only for loopback hosts. Leave empty unless a web app must call the gateway |
 | `stream_idle_timeout` | `2m` | Cuts an upstream stream with no bytes for this long |
 | `response_header_timeout` | `10m` | Maximum wait for upstream response headers |
 | `clients[]` | required | `name`, `key_sha256`, optional `models` allowlist (aliases) |
@@ -145,7 +147,24 @@ models show tokens without a price.
 
 ## Security model
 
-- Loopback bind and loopback peer check; no CORS headers, so browser pages cannot read responses.
+- Loopback bind and loopback peer check.
+- Browser pages are refused: the gateway is for local programs, but any web page can send
+  requests to `127.0.0.1`.
+  - `Host` must name a loopback address (`localhost`, `*.localhost`, `127.0.0.1`, `[::1]`); anything
+    else gets 421. This blocks DNS rebinding.
+  - A request with an `Origin` header is refused (403 `origin_not_allowed`) unless the exact origin
+    is in `allowed_origins`. A request with no `Origin` but a `Sec-Fetch-Site` other than `none` is
+    refused too (403 `cross_site`).
+  - CORS preflights are answered only for allowed origins, only for `GET`/`POST`, and only for the
+    headers the OpenAI and Anthropic SDKs send. `Access-Control-Allow-Credentials` is never set.
+  - `POST` bodies must be `application/json` (415 otherwise), so no form or `text/plain` request
+    reaches a handler.
+  - Every response sets `nosniff`, `no-store`, `X-Frame-Options: DENY`, a `default-src 'none'`
+    CSP, `Cross-Origin-Resource-Policy: same-origin`, and `Vary: Origin`. Buffered upstream
+    responses are always sent as `application/json`, whatever type the upstream claims.
+- Caller `Anthropic-Version` must look like a date, and `Anthropic-Beta` tokens must be plain
+  `[a-z0-9.-]` names, or they are dropped.
+- A failing `command` credential's stderr is not logged, in case the helper echoed a secret.
 - Client keys: 32 random bytes (`aigw_` prefix for leak scanners), stored only as SHA-256, compared
   in constant time against every client. Each client can be limited to a model allowlist.
 - The request's top-level `model` must be an exact-case key; case variants are refused, so a
