@@ -19,6 +19,7 @@ import (
 const (
 	DefaultListen                = "127.0.0.1:8789"
 	DefaultMaxRequestBytes       = 32 << 20
+	DefaultMaxConcurrent         = 64
 	DefaultStreamIdleTimeout     = 2 * time.Minute
 	DefaultResponseHeaderTimeout = 10 * time.Minute
 	DefaultCommandTTL            = 5 * time.Minute
@@ -65,6 +66,8 @@ type Config struct {
 	LogFile               string               `json:"log_file"`
 	LogLevel              string               `json:"log_level"`
 	MaxRequestBytes       int64                `json:"max_request_bytes"`
+	MaxConcurrentRequests int                  `json:"max_concurrent_requests"`
+	AllowedOrigins        []string             `json:"allowed_origins,omitempty"`
 	StreamIdleTimeout     Duration             `json:"stream_idle_timeout"`
 	ResponseHeaderTimeout Duration             `json:"response_header_timeout"`
 	Clients               []Client             `json:"clients"`
@@ -154,8 +157,16 @@ func (c *Config) validate() error {
 	if err := checkLoopbackListen(c.Listen); err != nil {
 		errs = append(errs, err)
 	}
+	for i, o := range c.AllowedOrigins {
+		if err := checkOrigin(o); err != nil {
+			add("allowed_origins[%d]: %w", i, err)
+		}
+	}
 	if c.LogLevel == "" {
 		c.LogLevel = "info"
+	}
+	if c.MaxConcurrentRequests <= 0 {
+		c.MaxConcurrentRequests = DefaultMaxConcurrent
 	}
 	if c.MaxRequestBytes <= 0 {
 		c.MaxRequestBytes = DefaultMaxRequestBytes

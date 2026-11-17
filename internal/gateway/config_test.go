@@ -202,7 +202,7 @@ func TestCommandCredentialFailures(t *testing.T) {
 		return nil, []byte("not logged in"), errors.New("exit status 1")
 	}
 	_, err := newCommandCred([]string{"gh"}, time.Minute, fail).Token(context.Background())
-	if !errors.Is(err, errNoCredential) || !strings.Contains(err.Error(), "not logged in") {
+	if !errors.Is(err, errNoCredential) || strings.Contains(err.Error(), "not logged in") || !strings.Contains(err.Error(), "withheld") {
 		t.Fatalf("got %v", err)
 	}
 	empty := func(context.Context, string, ...string) ([]byte, []byte, error) { return []byte("\n"), nil, nil }

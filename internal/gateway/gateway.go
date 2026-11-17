@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -53,6 +54,7 @@ type Gateway struct {
 	transport http.RoundTripper
 	version   string
 	providers map[string]*upstream
+	slots     chan struct{}
 }
 
 type upstream struct {
@@ -75,7 +77,7 @@ func New(opts Options) *Gateway {
 	if opts.Version == "" {
 		opts.Version = "dev"
 	}
-	g := &Gateway{cfg: opts.Config, log: opts.Logger, transport: opts.Transport, version: opts.Version, providers: map[string]*upstream{}}
+	g := &Gateway{cfg: opts.Config, log: opts.Logger, transport: opts.Transport, version: opts.Version, providers: map[string]*upstream{}, slots: make(chan struct{}, opts.Config.MaxConcurrentRequests)}
 	for name, p := range opts.Config.Providers {
 		g.providers[name] = &upstream{name: name, cfg: p, cred: newCredential(p.Auth, opts.Getenv, opts.Runner)}
 	}
@@ -110,12 +112,24 @@ type call struct {
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := &call{id: newID(), format: formatFor(r.URL.Path)}
 	w.Header().Set(headerRequestID, c.id)
+	setSecurityHeaders(w.Header())
 	rec := &recorder{ResponseWriter: w, status: http.StatusOK}
 	start := time.Now()
 	defer func() { g.logCall(r, c, rec, start) }()
 
 	if !isLoopbackAddr(r.RemoteAddr) {
 		g.fail(rec, c, http.StatusForbidden, "non_loopback", "the gateway only accepts loopback traffic")
+		return
+	}
+	if !g.browserGuard(rec, r, c) {
+		return
+	}
+	select {
+	case g.slots <- struct{}{}:
+		defer func() { <-g.slots }()
+	default:
+		rec.Header().Set("Retry-After", "1")
+		g.fail(rec, c, http.StatusServiceUnavailable, "too_many_requests", "the gateway is at its concurrent request limit")
 		return
 	}
 	if r.URL.Path == "/healthz" {
@@ -320,13 +334,13 @@ func (g *Gateway) attempt(ctx context.Context, c *call, up *upstream, path strin
 	}
 	if up.cfg.Kind == kindAnthropic {
 		version := up.cfg.AnthropicVersion
-		if c.format == formatAnthropic && in.Get("Anthropic-Version") != "" {
-			version = in.Get("Anthropic-Version")
+		if v := in.Get("Anthropic-Version"); c.format == formatAnthropic && anthropicVersionRE.MatchString(v) {
+			version = v
 		}
 		h.Set("Anthropic-Version", version)
 		if c.format == formatAnthropic {
-			for _, v := range in.Values("Anthropic-Beta") {
-				h.Add("Anthropic-Beta", v)
+			if betas := anthropicBetas(in.Values("Anthropic-Beta")); betas != "" {
+				h.Set("Anthropic-Beta", betas)
 			}
 		}
 	}
@@ -414,15 +428,18 @@ func (g *Gateway) passthrough(w http.ResponseWriter, r *http.Request, c *call, u
 	defer resp.Body.Close()
 
 	copyRelayedHeaders(w.Header(), resp.Header)
-	if ct := resp.Header.Get("Content-Type"); ct != "" {
-		w.Header().Set("Content-Type", ct)
-	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 || !isEventStream(resp) {
-		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBody))
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamBody+1))
 		if err != nil {
 			g.upstreamFailed(w, r, c, err)
 			return
 		}
+		if len(raw) > maxUpstreamBody {
+			g.fail(w, c, http.StatusBadGateway, "upstream_response_too_large", "upstream response exceeds the gateway limit")
+			return
+		}
+		// Both APIs answer in JSON; never reflect an upstream-chosen type such as text/html.
+		w.Header().Set("Content-Type", "application/json")
 		if resp.StatusCode >= 200 && resp.StatusCode <= 299 && route != routeCountTokens {
 			scanUsage(up.cfg.Kind, raw, &c.usage)
 		}
@@ -431,6 +448,7 @@ func (g *Gateway) passthrough(w http.ResponseWriter, r *http.Request, c *call, u
 		return
 	}
 
+	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Del("Content-Length")
 	w.WriteHeader(resp.StatusCode)
 	flush := flusher(w)
@@ -793,4 +811,21 @@ func newID() string {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+var (
+	anthropicVersionRE = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+	anthropicBetaRE    = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,79}$`)
+)
+
+// anthropicBetas keeps the well-formed beta tokens from the caller's Anthropic-Beta headers, so a
+// client cannot smuggle arbitrary text upstream.
+func anthropicBetas(values []string) string {
+	var keep []string
+	for _, tok := range splitHeaderList(values) {
+		if anthropicBetaRE.MatchString(tok) && !slices.Contains(keep, tok) {
+			keep = append(keep, tok)
+		}
+	}
+	return strings.Join(keep, ",")
 }
