@@ -10,6 +10,7 @@ beyond `go build`:
 | `ai-usage tui` | The same dashboard in the terminal: braille line charts, block-stacked bars, heatmap |
 | `ai-usage report` | Dated `report.md`, `usage.json`, `usage.csv` per tool, profile, model, and day |
 | `foundry-entra-proxy` | Loopback proxy for Entra-only Azure AI Foundry deployments ([docs](docs/foundry-entra-proxy.md)) |
+| `ai-gateway` | Loopback API gateway: one key and endpoint for local tools (Caido, scripts) in OpenAI or Anthropic format, routed to Foundry, GitHub Models, or API-key accounts, with usage logged for `ai-usage` ([docs](docs/ai-gateway.md)) |
 
 Every tool's logs are read read-only. Only counters, model names, timestamps, session ids, and
 (for session detail) redacted titles, prompts, file paths, and commands are kept.
@@ -23,7 +24,7 @@ brew install hacker1db/ai-usage/ai-usage hacker1db/ai-usage/foundry-entra-proxy
 ```
 
 ```zsh
-make build                     # bin/ai-usage and bin/foundry-entra-proxy
+make build                     # bin/ai-usage, bin/foundry-entra-proxy, bin/ai-gateway
 make check                     # gofmt, vet, race tests, JS syntax check, stdlib-only rule, govulncheck
 make lint                      # golangci-lint and the app.js type check (see Development)
 bin/ai-usage serve             # web dashboard in the foreground; prints the URL and opens it (-open=false to skip)
@@ -43,6 +44,7 @@ bin/ai-usage report -days 7 -print
 | Codex CLI | `personal-chatgpt` / `work-foundry` | `~/.codex/sessions`, `~/.codex/archived_sessions` | Profile comes from the session's `model_provider` |
 | GitHub Copilot CLI | `github-copilot` | `~/.copilot/session-store.db` | Read with `/usr/bin/sqlite3 -readonly`, so there's no driver dependency |
 | foundry-entra-proxy | client User-Agent | `~/Library/Logs/foundry-entra-proxy/proxy.log` | Cross-check only, **not** added to totals (overlaps Codex `work-foundry`) |
+| ai-gateway | gateway provider | `~/Library/Logs/ai-gateway/gateway.log` (`-gateway-log`) | Counted in totals; model is the upstream model, so it is priced. Dashboard tab **Gateway** |
 
 Metrics per row: sessions, requests, input, cached, output, reasoning, total. Input includes
 cached and cache-write tokens for every tool, so `total = input + output`. Reasoning is a subset of
@@ -360,6 +362,21 @@ zizmor on workflows, shellcheck and shfmt on `scripts/` (shfmt follows
 [`.editorconfig`](.editorconfig)), markdownlint, yamllint, JSON, EditorConfig, and gitleaks. Its
 configs live in [`.github/linters/`](.github/linters); then the job runs the same `tsc` check.
 Linter tools are CI-only; the Go module itself stays stdlib-only.
+
+Tests beyond `make check`:
+
+- `make coverage` writes `coverage.html` and enforces an 85% statement floor on `internal/gateway`.
+- `make test-integration` runs `ai-gateway` and `ai-usage` end to end against fake upstreams; with
+  `npm ci --prefix test/sdk` first it also drives the gateway with the official OpenAI and
+  Anthropic SDKs (pinned by `test/sdk/package-lock.json`; test-only, never shipped).
+
+CI runs both as the `coverage` and `integration` jobs and keeps the HTML report and the
+integration log as artifacts.
+
+The repo's [`.mcp.json`](.mcp.json) adds a pinned, headless Playwright MCP server, which agents
+use to screenshot the dashboard and test reports for pull requests. It drives Playwright's own
+Chromium (not Google Chrome); install it once with `npx -y playwright@1.64.1 install chromium`.
+Screenshots land in `reports/screenshots/`, which is git-ignored.
 
 ## Releases
 

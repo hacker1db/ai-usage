@@ -26,6 +26,7 @@ const (
 	ToolCodex   = "codex"
 	ToolCopilot = "copilot"
 	ToolProxy   = "foundry-proxy" // cross-check only; overlaps Codex work-foundry
+	ToolGateway = "ai-gateway"
 )
 
 // Slot returns the activity slot of t.
