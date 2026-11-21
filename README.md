@@ -41,11 +41,12 @@ bin/ai-usage report -days 7 -print
 | Claude Code | `no-profile` | `~/.claude/projects/**/*.jsonl` | Sessions launched without `CLAUDE_CONFIG_DIR`; should stay empty |
 | Codex CLI | `personal-chatgpt` / `work-foundry` | `~/.codex/sessions`, `~/.codex/archived_sessions` | Profile comes from the session's `model_provider` |
 | GitHub Copilot CLI | `github-copilot` | `~/.copilot/session-store.db` | Read with `/usr/bin/sqlite3 -readonly`, so there's no driver dependency |
+| Google Antigravity CLI | `google` | `~/.gemini/antigravity-cli/conversations/*.db` | One SQLite store per conversation; token usage is decoded from each model step's protobuf metadata. Titles from `conversation_summaries.db`, prompts from `history.jsonl`. Models without a built-in price (Gemini) need a `pricing.json` entry, e.g. `"gemini-*"` |
 | foundry-entra-proxy | client User-Agent | `~/Library/Logs/foundry-entra-proxy/proxy.log` | Cross-check only, **not** added to totals (overlaps Codex `work-foundry`) |
 
 Metrics per row: sessions, requests, input, cached, output, reasoning, total. Input includes
 cached and cache-write tokens for every tool, so `total = input + output`. Reasoning is a subset of
-output (OpenAI and Copilot); Claude transcripts don't report it. Copilot rows also carry
+output (OpenAI, Copilot, and Antigravity thinking tokens); Claude transcripts don't report it. Copilot rows also carry
 `copilot_aiu` (`total_nano_aiu / 1e9`), a local estimate only.
 
 The proxy writes its request lines through the `internal/proxylog` contract, which the collector
@@ -60,10 +61,10 @@ come from one validated palette (`internal/palette`): fixed categorical slots pe
 (lightness falls monotonically), decorative accents that never encode data, and
 reserved status colors that always carry an icon and a label.
 
-- **Controls:** tab (All, Claude, Codex, Copilot, Foundry), profile (see below), metric (total, uncached = input -
+- **Controls:** tab (All, Claude, Codex, Copilot, Antigravity, Foundry), profile (see below), metric (total, uncached = input -
   cached + output, output, requests), burn-rate window (1h/3h/6h), and range (24h hourly, 7d in
   4-hour buckets, 30d daily). On the web these are links (`/?tab=foundry&range=30d` bookmarks a
-  view). In the TUI they're keys: `tab`/`1-5`, `m`, `r`, `b`, `s`, `p`/`P` profile, `f` refresh,
+  view). In the TUI they're keys: `tab`/`1-6`, `m`, `r`, `b`, `s`, `p`/`P` profile, `f` refresh,
   `j/k` scroll, `o` ownership filter, `?` help, `q` quit.
 - **Profile filter:** a chip bar under the controls narrows every chart, card, and session list
   to one profile (`?profile=claude-code:personal`) or a named group you define under `profiles:`
@@ -185,7 +186,7 @@ bin/ai-usage report -h
 ```
 
 Flags: `-claude DIR=LABEL` (repeatable, replaces the default profile list), `-codex-home`,
-`-copilot-db`, `-proxy-log`, `-out`. `reports/` is gitignored, and re-running on the same day
+`-copilot-db`, `-antigravity-home`, `-proxy-log`, `-out`. `reports/` is gitignored, and re-running on the same day
 overwrites that day's folder. The Go port matches the earlier `collect.py` exactly on the same logs:
 every daily row, every metric, and byte-identical markdown.
 

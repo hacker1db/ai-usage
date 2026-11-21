@@ -28,7 +28,8 @@ var Groups = []Group{
 	{"codex:work-foundry", "Codex · Foundry", 5},
 	{"copilot:github-copilot", "Copilot", 6},
 	{"claude-code:legacy", "Claude · legacy", 7},
-	{"claude-code:no-profile", "Claude · no profile", 8},
+	{"antigravity:google", "Antigravity", 8},
+	{"claude-code:no-profile", "Claude · no profile", 0},
 }
 
 // Other collects any tool:profile without a slot.
@@ -73,6 +74,7 @@ var Tabs = []Tab{
 	{Option{"claude", "Claude"}, func(t, _ string) bool { return t == usage.ToolClaude }},
 	{Option{"codex", "Codex"}, func(t, _ string) bool { return t == usage.ToolCodex }},
 	{Option{"copilot", "Copilot"}, func(t, _ string) bool { return t == usage.ToolCopilot }},
+	{Option{"antigravity", "Antigravity"}, func(t, _ string) bool { return t == usage.ToolAntigravity }},
 	{Option{"foundry", "Foundry"}, func(t, p string) bool { return p == "work-foundry" && t != usage.ToolProxy }},
 }
 

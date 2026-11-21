@@ -294,7 +294,7 @@ func (s *screen) key(k string, src source) bool {
 		f.Tab = view.Cycle(view.TabOptions(), f.Tab, 1)
 	case "shift-tab":
 		f.Tab = view.Cycle(view.TabOptions(), f.Tab, -1)
-	case "1", "2", "3", "4", "5":
+	case "1", "2", "3", "4", "5", "6":
 		f.Tab = view.Tabs[int(k[0]-'1')].ID
 	case "m":
 		f.Metric = view.Cycle(view.MetricOptions(), f.Metric, 1)
@@ -350,7 +350,7 @@ func (s *screen) key(k string, src source) bool {
 var helpLines = []string{
 	"Keys",
 	"",
-	"  tab / shift-tab, 1-5   switch tab (All, Claude, Codex, Copilot, Foundry)",
+	"  tab / shift-tab, 1-6   switch tab (All, Claude, Codex, Copilot, Antigravity, Foundry)",
 	"  m / M                  next / previous metric",
 	"  r / R                  next / previous range (24h, 7d, 30d)",
 	"  b                      burn-rate window (1h, 3h, 6h)",
