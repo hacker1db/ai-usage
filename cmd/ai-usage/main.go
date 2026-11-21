@@ -89,9 +89,11 @@ func sourceFlags(fs *flag.FlagSet) func() sources.Options {
 	fs.Var(&claude, "claude", "Claude config `DIR=LABEL` (repeatable; replaces the default profiles)")
 	codex := fs.String("codex-home", d.CodexHome, "Codex home")
 	copilot := fs.String("copilot-db", d.CopilotDB, "Copilot CLI session store")
+	antigravity := fs.String("antigravity-home", d.AntigravityHome, "Antigravity CLI data dir")
 	proxy := fs.String("proxy-log", d.ProxyLog, "foundry-entra-proxy log")
 	return func() sources.Options {
-		o := sources.Options{CodexHome: *codex, CodexExtra: sources.DefaultCodexExtras(*codex), CopilotDB: *copilot, ProxyLog: *proxy}
+		o := sources.Options{CodexHome: *codex, CodexExtra: sources.DefaultCodexExtras(*codex), CopilotDB: *copilot,
+			AntigravityHome: *antigravity, ProxyLog: *proxy}
 		if len(claude) > 0 {
 			o.Claude = claude
 		}
