@@ -14,8 +14,10 @@ type Options struct {
 	CodexHome  string
 	CodexExtra []string // more Codex homes (separate CODEX_HOME profiles); DefaultOptions finds them
 	CopilotDB  string
-	ProxyLog   string
-	GatewayLog string
+	// AntigravityHome is the Antigravity CLI data dir (conversations/*.db).
+	AntigravityHome string
+	ProxyLog        string
+	GatewayLog      string
 }
 
 // DefaultOptions returns the standard macOS locations (CODEX_HOME is honored).
@@ -25,11 +27,12 @@ func DefaultOptions() Options {
 		codex = "~/.codex"
 	}
 	return Options{
-		CodexHome:  codex,
-		CodexExtra: DefaultCodexExtras(codex),
-		CopilotDB:  "~/.copilot/session-store.db",
-		ProxyLog:   "~/Library/Logs/foundry-entra-proxy/proxy.log",
-		GatewayLog: "~/Library/Logs/ai-gateway/gateway.log",
+		CodexHome:       codex,
+		CodexExtra:      DefaultCodexExtras(codex),
+		CopilotDB:       "~/.copilot/session-store.db",
+		AntigravityHome: "~/.gemini/antigravity-cli",
+		ProxyLog:        "~/Library/Logs/foundry-entra-proxy/proxy.log",
+		GatewayLog:      "~/Library/Logs/ai-gateway/gateway.log",
 	}
 }
 
@@ -104,6 +107,9 @@ func CollectAll(agg *usage.Aggregator, o Options, c *Caches) ([]Status, Stats) {
 		status = append(status, CollectCodex(agg, home, c.Codex))
 	}
 	status = append(status, CollectCopilot(agg, o.CopilotDB))
+	if o.AntigravityHome != "" {
+		status = append(status, CollectAntigravity(agg, o.AntigravityHome))
+	}
 	status = append(status, CollectProxy(agg, o.ProxyLog))
 	status = append(status, CollectGateway(agg, o.GatewayLog))
 	c.Claude.Prune()

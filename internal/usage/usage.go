@@ -22,11 +22,12 @@ const (
 
 // Tool names as they appear in rows.
 const (
-	ToolClaude  = "claude-code"
-	ToolCodex   = "codex"
-	ToolCopilot = "copilot"
-	ToolProxy   = "foundry-proxy" // cross-check only; overlaps Codex work-foundry
-	ToolGateway = "ai-gateway"
+	ToolClaude      = "claude-code"
+	ToolCodex       = "codex"
+	ToolCopilot     = "copilot"
+	ToolAntigravity = "antigravity"
+	ToolProxy       = "foundry-proxy" // cross-check only; overlaps Codex work-foundry
+	ToolGateway     = "ai-gateway"
 )
 
 // Slot returns the activity slot of t.
