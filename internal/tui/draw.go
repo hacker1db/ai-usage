@@ -83,7 +83,7 @@ func drawHeader(doc *Doc, d *view.Dashboard, th Theme, st Status) {
 		}
 		tabs.T(label, s)
 	}
-	tabs.T("  tab/1-5", th.Muted())
+	tabs.T("  tab/1-7", th.Muted())
 	doc.Add(tabs)
 
 	ctl := new(B)
@@ -113,7 +113,7 @@ func drawHeader(doc *Doc, d *view.Dashboard, th Theme, st Status) {
 
 // tabColor tints the selected tool tab with the color of the tool's main series.
 func tabColor(th Theme, id string) string {
-	slot := map[string]int{"claude": 2, "codex": 4, "copilot": 6, "foundry": 3}[id]
+	slot := map[string]int{"claude": 2, "codex": 4, "copilot": 6, "antigravity": 8, "foundry": 3}[id]
 	if slot == 0 {
 		return palette.Accent[th.Mode][1]
 	}
