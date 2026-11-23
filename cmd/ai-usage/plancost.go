@@ -15,7 +15,6 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// sessionList is a repeatable -session flag; each value may also hold comma-separated references.
 type sessionList []string
 
 func (s *sessionList) String() string { return strings.Join(*s, ",") }
@@ -29,8 +28,6 @@ func (s *sessionList) Set(v string) error {
 	return nil
 }
 
-// exitIncomplete is the exit status when -strict is set and the summary is incomplete, so a
-// caller can tell "ran fine, numbers have gaps" from a hard failure (1) or bad usage (2).
 const exitIncomplete = 3
 
 func runPlanCost(args []string) error {
@@ -57,8 +54,7 @@ func runPlanCost(args []string) error {
 	if err != nil {
 		return err
 	}
-	// No cutoff: a session's full history is counted even when it began long ago, so a long-running
-	// session is never partly priced.
+
 	agg := usage.NewAggregator(time.Time{}, usage.Daily)
 	status, _ := sources.CollectAll(agg, opts(), nil)
 	var sourceErrors []string
@@ -115,7 +111,6 @@ func printPlanCost(s plancost.Summary) {
 	}
 }
 
-// money shows an exact estimate, or ">= priced part" when some models have no price.
 func money(full *float64, priced float64) string {
 	if full != nil {
 		return fmt.Sprintf("%.4f", *full)

@@ -23,10 +23,10 @@ const testKey = "client-key-0123456789abcdef0123456789"
 type fakeTokens struct {
 	mu          sync.Mutex
 	generation  int
-	invalidated int      // invalidations that dropped the current token
-	rejected    []string // every token passed to Invalidate
+	invalidated int
+	rejected    []string
 	err         error
-	block       bool // Token waits for ctx to be done and returns its error
+	block       bool
 }
 
 func (f *fakeTokens) Token(ctx context.Context) (string, error) {
@@ -45,7 +45,6 @@ func (f *fakeTokens) Token(ctx context.Context) (string, error) {
 	return fmt.Sprintf("entra-%d", f.generation), nil
 }
 
-// Invalidate mirrors token.AzCLI: only the token currently cached can be dropped.
 func (f *fakeTokens) Invalidate(rejected string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -93,7 +92,6 @@ type harness struct {
 	logMu    *sync.Mutex
 }
 
-// logText reads the log buffer under the logger's lock, for tests that poll while requests finish.
 func (h *harness) logText() string {
 	h.logMu.Lock()
 	defer h.logMu.Unlock()
@@ -335,7 +333,7 @@ func TestConcurrent401sInvalidateOnce(t *testing.T) {
 	arrived.Add(n)
 	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "Bearer entra-0" {
-			// Hold every first attempt until all n have been sent with the same stale token.
+
 			arrived.Done()
 			arrived.Wait()
 			w.WriteHeader(http.StatusUnauthorized)

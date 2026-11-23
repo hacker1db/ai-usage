@@ -5,20 +5,11 @@ import (
 	"strings"
 )
 
-// This file is a small YAML subset parser, so the module stays standard-library only. It covers
-// what config files like projects.yaml and gh's hosts.yml use: block mappings, block sequences
-// (including "- key: value" items), flow sequences of scalars ("[a, b]"), single- and
-// double-quoted strings, "~"/"null"/empty values, and "#" comments. Every scalar is a string.
-// Anchors, aliases, tags, flow mappings, multi-line strings, and multiple documents are rejected
-// with a line number rather than misread.
-
-// Map is a YAML mapping that remembers key order.
 type Map struct {
 	Keys []string
 	Vals map[string]any
 }
 
-// Get returns a key's value, or nil.
 func (m *Map) Get(key string) any {
 	if m == nil {
 		return nil
@@ -27,7 +18,7 @@ func (m *Map) Get(key string) any {
 }
 
 type yline struct {
-	n      int // 1-based line number
+	n      int
 	indent int
 	text   string
 }
@@ -37,7 +28,6 @@ type yparser struct {
 	pos   int
 }
 
-// ParseYAML parses a document into *Map, []any, string, or nil.
 func ParseYAML(src string) (any, error) {
 	var p yparser
 	for i, raw := range strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n") {
@@ -70,7 +60,6 @@ func ParseYAML(src string) (any, error) {
 	return v, nil
 }
 
-// stripComment drops a "#" comment that starts the line or follows whitespace, outside quotes.
 func stripComment(s string) string {
 	var q byte
 	for i := 0; i < len(s); i++ {
@@ -133,7 +122,7 @@ func (p *yparser) seq(indent int) ([]any, error) {
 			return nil, fmt.Errorf("line %d: nested inline lists aren't supported; put the inner list on its own lines", l.n)
 		default:
 			if _, _, ok := splitKey(rest); ok {
-				// "- key: value" starts a mapping indented to where "key" begins.
+
 				p.lines[p.pos] = yline{l.n, l.indent + len(l.text) - len(rest), rest}
 				v, err := p.mapping(p.lines[p.pos].indent)
 				if err != nil {
@@ -164,7 +153,7 @@ func (p *yparser) mapping(indent int) (*Map, error) {
 			return nil, fmt.Errorf("line %d: unexpected indentation", l.n)
 		}
 		if isDash(l.text) {
-			break // a sequence item belonging to the parent
+			break
 		}
 		key, rest, ok := splitKey(l.text)
 		if !ok {
@@ -182,7 +171,7 @@ func (p *yparser) mapping(indent int) (*Map, error) {
 		case p.pos < len(p.lines) && p.lines[p.pos].indent > indent:
 			v, err = p.node(indent + 1)
 		case p.pos < len(p.lines) && p.lines[p.pos].indent == indent && isDash(p.lines[p.pos].text):
-			v, err = p.seq(indent) // "key:\n- item" with the list at the key's indent
+			v, err = p.seq(indent)
 		}
 		if err != nil {
 			return nil, err
@@ -193,7 +182,6 @@ func (p *yparser) mapping(indent int) (*Map, error) {
 	return m, nil
 }
 
-// splitKey splits "key: value" or "key:" outside quotes.
 func splitKey(t string) (key, rest string, ok bool) {
 	if t == "" || t[0] == '[' || t[0] == '{' {
 		return "", "", false

@@ -8,8 +8,6 @@ import (
 	"ai-usage/internal/palette"
 )
 
-// tokensCSS renders palette.go as CSS custom properties: light on :root, dark under the OS
-// preference (unless the viewer picked light) and under an explicit data-theme="dark".
 func tokensCSS() string {
 	vars := func(m palette.Mode) string {
 		var b strings.Builder

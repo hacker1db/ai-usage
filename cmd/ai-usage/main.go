@@ -1,10 +1,3 @@
-// Command ai-usage tracks local AI token usage across Claude Code, Codex CLI, GitHub Copilot CLI,
-// and foundry-entra-proxy. It reads each tool's logs read-only.
-//
-//	ai-usage serve    live web dashboard on a loopback address
-//	ai-usage tui      live terminal dashboard (same data and charts)
-//	ai-usage report   dated report.md, usage.json, usage.csv
-//	ai-usage plan-cost  tokens and estimated cost of a set of linked sessions
 package main
 
 import (
@@ -65,7 +58,6 @@ Run "ai-usage <command> -h" for a command's flags.
 	os.Exit(code)
 }
 
-// claudeFlag is a repeatable DIR=LABEL flag that replaces the default Claude profile dirs.
 type claudeFlag []sources.ClaudeDir
 
 func (c *claudeFlag) String() string { return "" }
@@ -82,7 +74,6 @@ func (c *claudeFlag) Set(v string) error {
 	return nil
 }
 
-// sourceFlags registers the log-location flags shared by every command.
 func sourceFlags(fs *flag.FlagSet) func() sources.Options {
 	d := sources.DefaultOptions()
 	var claude claudeFlag

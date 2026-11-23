@@ -9,14 +9,12 @@ import (
 	"ai-usage/internal/view"
 )
 
-// Status is the live-connection state shown in the header.
 type Status struct {
-	Source string // "live via dashboard :8790" or "local collect"
+	Source string
 	Stale  bool
-	Notice string // error text, if any
+	Notice string
 }
 
-// Frame is a rendered dashboard: a fixed header and a scrollable body.
 type Frame struct {
 	Header []Line
 	Body   []Line
@@ -24,7 +22,6 @@ type Frame struct {
 
 const chartRows = 10
 
-// Draw renders every section of d at width w.
 func Draw(d *view.Dashboard, th Theme, w int, st Status) Frame {
 	w = max(w, 40)
 	h := &Doc{W: w}
@@ -111,7 +108,6 @@ func drawHeader(doc *Doc, d *view.Dashboard, th Theme, st Status) {
 	doc.Text(strings.Repeat("─", doc.W), Style{FG: th.Ink.Axis})
 }
 
-// tabColor tints the selected tool tab with the color of the tool's main series.
 func tabColor(th Theme, id string) string {
 	slot := map[string]int{"claude": 2, "codex": 4, "copilot": 6, "antigravity": 8, "foundry": 3}[id]
 	if slot == 0 {
@@ -120,7 +116,6 @@ func tabColor(th Theme, id string) string {
 	return th.Series(slot)
 }
 
-// drawProfileBar lists the profile filter choices; p / P cycles them.
 func drawProfileBar(doc *Doc, d *view.Dashboard, th Theme) {
 	line := new(B).T("profile ", th.Muted())
 	flush := func() {
@@ -169,7 +164,6 @@ func drawHero(doc *Doc, d *view.Dashboard, th Theme) {
 	doc.Add(b)
 }
 
-// yGutter is the width of y-axis labels for ticks up to top.
 func yGutter(top float64) int {
 	g := 0
 	for _, t := range view.Ticks(top, 4) {
@@ -178,7 +172,6 @@ func yGutter(top float64) int {
 	return g + 1
 }
 
-// tickRows maps the 5 axis ticks to canvas rows (0 = top).
 func tickRows(top float64, rows int) map[int]string {
 	out := map[int]string{}
 	for _, t := range view.Ticks(top, 4) {
@@ -279,7 +272,6 @@ func drawCumulative(doc *Doc, d *view.Dashboard, th Theme) {
 	doc.Text(Truncate(c.Desc, doc.W), th.Muted())
 }
 
-// overlay writes s into line ending at column end (right-aligned) when rightAlign is true.
 func overlay(line Line, end int, s string, st Style, rightAlign bool) {
 	rs := []rune(" " + s)
 	start := end - len(rs) + 1
@@ -300,7 +292,7 @@ func drawStack(doc *Doc, d *view.Dashboard, th Theme) {
 		doc.Text("No usage in range.", th.Muted())
 		return
 	}
-	// aggregate buckets when there are more than columns available
+
 	g0 := yGutter(s.YMax)
 	pw := doc.W - g0 - 1
 	n, k := s.N, 1
@@ -363,8 +355,7 @@ func drawStack(doc *Doc, d *view.Dashboard, th Theme) {
 	for i := range labels {
 		labels[i] = ' '
 	}
-	// candidates: every bucket, or only day starts for multi-hour buckets; then label every m-th
-	// candidate so labels sit at a uniform spacing with at least one space between them
+
 	var cand []int
 	widest := 0
 	for i := range n {
@@ -498,7 +489,7 @@ func drawMix(doc *Doc, d *view.Dashboard, th Theme) {
 		b.T(PadRight(label, 20), th.Primary())
 		segs := Stack([]float64{m.Cached, m.Fresh, m.Output}, colors[:], m.Total(), barW)
 		for i := range barW {
-			// horizontal bar: reuse the stacking math one cell at a time, filled from the left
+
 			fill, fg, bg := StackCell(segs, i)
 			b.C(leftBlocks[fill], Style{FG: fg, BG: bg})
 		}
@@ -524,7 +515,7 @@ func drawTop(doc *Doc, d *view.Dashboard, th Theme) {
 	wide := doc.W >= 110
 	shareW, projW, profW := 12, 17, 21
 	if !wide {
-		shareW, projW, profW = 6, 13, 2 // narrow: swatch only for the profile
+		shareW, projW, profW = 6, 13, 2
 	}
 	for i, x := range d.Top {
 		right := new(B).Sp(1).T(PadRight(orDash(x.Project), projW), th.Secondary()).Sp(1).
@@ -539,7 +530,6 @@ func drawTop(doc *Doc, d *view.Dashboard, th Theme) {
 	}
 }
 
-// row lays out prefix, a flexible title column, and right-hand cells across the width.
 func row(doc *Doc, prefix *B, title string, titleSt Style, right *B) {
 	w := max(doc.W-prefix.Len()-right.Len(), 4)
 	prefix.T(PadRight(title, w), titleSt)
@@ -561,7 +551,6 @@ func orDash(s string) string {
 	return s
 }
 
-// hbar draws a single-color horizontal bar of share (0-1) in w cells with eighth precision.
 func hbar(b *B, share float64, w int, st, empty Style) {
 	units := int(math.Round(math.Min(math.Max(share, 0), 1) * float64(w*8)))
 	for i := range w {
@@ -583,7 +572,6 @@ func groupByKey(key string) view.Group {
 	return view.Other
 }
 
-// ownSuffix names the ownership filter in a section title.
 func ownSuffix(d *view.Dashboard) string {
 	if d.Filters.Own == "" {
 		return ""
@@ -684,7 +672,7 @@ func drawSessions(doc *Doc, d *view.Dashboard, th Theme) {
 	wide := doc.W >= 110
 	lastW, projW, profW, actW, valW := 15, 16, 22, 7, 8
 	if !wide {
-		projW, profW = 12, 2 // narrow: swatch only for the profile
+		projW, profW = 12, 2
 	}
 	cells := func(project string, slot int, label, active, value string, st, vst Style, swatch bool) *B {
 		r := new(B).Sp(1).T(PadRight(project, projW), st).Sp(1)
@@ -714,7 +702,6 @@ func drawSessions(doc *Doc, d *view.Dashboard, th Theme) {
 	}
 }
 
-// shortMetric is a column-sized metric name.
 func shortMetric(m view.Metric) string {
 	if m.ID == "total" {
 		return "Tokens"
@@ -793,14 +780,12 @@ func drawSources(doc *Doc, d *view.Dashboard, th Theme) {
 	}
 }
 
-// wrap word-wraps text to the document width.
 func wrap(doc *Doc, text string, st Style) {
 	for _, l := range wrapLines(text, doc.W) {
 		doc.Text(l, st)
 	}
 }
 
-// wrapLines splits text into lines of at most w columns at word boundaries.
 func wrapLines(text string, w int) []string {
 	var out []string
 	line := ""

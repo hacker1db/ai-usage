@@ -1,4 +1,3 @@
-// Package sources reads each AI tool's local logs (read-only) into a usage.Aggregator.
 package sources
 
 import (
@@ -16,21 +15,17 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// Status is one source's collection result.
 type Status struct {
 	Source   string `json:"source"`
 	Path     string `json:"path"`
-	Status   string `json:"status"` // "ok", "not found", or "error: ..."
+	Status   string `json:"status"`
 	Requests int    `json:"requests"`
-	// Errors lists files or directories that could not be read while Status is "ok". The source
-	// still reports what it read, but its totals may be short.
+
 	Errors []string `json:"errors,omitempty"`
 }
 
-// maxStatusErrors caps Status.Errors; the last entry then says how many more there were.
 const maxStatusErrors = 5
 
-// capErrors trims errs to maxStatusErrors entries.
 func capErrors(errs []string) []string {
 	if len(errs) <= maxStatusErrors {
 		return errs
@@ -39,7 +34,6 @@ func capErrors(errs []string) []string {
 	return append(out, fmt.Sprintf("and %d more", len(errs)-(maxStatusErrors-1)))
 }
 
-// Stats counts parse-cache hits and misses for one collection.
 type Stats struct{ Hits, Misses int }
 
 type fileSig struct {
@@ -52,8 +46,6 @@ type cacheEntry[T any] struct {
 	val T
 }
 
-// FileCache keeps parsed results per file while its size and mtime are unchanged, so a refresh
-// re-reads only new or growing transcripts. A one-shot report uses a throwaway cache.
 type FileCache[T any] struct {
 	mu      sync.Mutex
 	entries map[string]cacheEntry[T]
@@ -61,19 +53,16 @@ type FileCache[T any] struct {
 	stats   Stats
 }
 
-// NewFileCache returns an empty cache.
 func NewFileCache[T any]() *FileCache[T] {
 	return &FileCache[T]{entries: map[string]cacheEntry[T]{}, live: map[string]struct{}{}}
 }
 
-// Start resets per-collection stats and the set of files seen.
 func (c *FileCache[T]) Start() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.stats, c.live = Stats{}, map[string]struct{}{}
 }
 
-// Prune forgets files that weren't seen since Start (deleted or out of the window).
 func (c *FileCache[T]) Prune() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -84,7 +73,6 @@ func (c *FileCache[T]) Prune() {
 	}
 }
 
-// Stats returns hits and misses since Start.
 func (c *FileCache[T]) Stats() Stats {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -114,9 +102,6 @@ type parsedFile[T any] struct {
 	val  T
 }
 
-// parseAll parses files modified at or after cutoff in parallel and returns results in path order,
-// so dedupe (first file wins) stays deterministic. Files that cannot be stat'ed are returned as
-// errors instead of being skipped silently.
 func parseAll[T any](c *FileCache[T], paths []string, cutoff time.Time, parse func(string) T) ([]parsedFile[T], []string) {
 	type job struct {
 		i    int
@@ -156,9 +141,6 @@ func parseAll[T any](c *FileCache[T], paths []string, cutoff time.Time, parse fu
 	return out, errs
 }
 
-// jsonlFiles lists *.jsonl files under root, skipping dot-directories and dot-files like a shell
-// glob would. Symlinked directories are not followed. Unreadable entries below root are returned
-// as errors; a missing root is not an error.
 func jsonlFiles(root string) (out, errs []string) {
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -183,9 +165,6 @@ func jsonlFiles(root string) (out, errs []string) {
 	return out, errs
 }
 
-// statSource tells a missing log location ("not found") from one that exists but can't be read
-// ("error: ..."), so a permission problem never passes for a tool that simply isn't installed.
-// It returns "" when p exists (and is a directory, if wantDir).
 func statSource(p string, wantDir bool) string {
 	st, err := os.Stat(p)
 	switch {

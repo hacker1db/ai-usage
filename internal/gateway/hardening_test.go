@@ -70,7 +70,7 @@ func TestCredentialEchoErrors(t *testing.T) {
 					if secret == "" {
 						secret = r.Header.Get("X-Api-Key")
 					}
-					// Escaped JSON verifies redaction happens after decoding.
+
 					msg := secret + strings.Repeat("!", 2000)
 					raw, _ := json.Marshal(map[string]any{"type": "error", "error": apiError{Message: msg}})
 					raw = bytes.ReplaceAll(raw, []byte("-"), []byte(`\u002d`))
@@ -103,7 +103,6 @@ func TestCredentialEchoErrors(t *testing.T) {
 	}
 }
 
-// Shorten actual socket deadlines in tests while checking the production window.
 type shortDeadlineWriter struct {
 	http.ResponseWriter
 	t *testing.T
@@ -201,7 +200,7 @@ func TestStreamingWriteWindowRenews(t *testing.T) {
 	if w.reads != 2 {
 		t.Fatal("read deadline not set and cleared", w.reads)
 	}
-	// Verify the response remains valid SSE.
+
 	if err := readSSE(bufio.NewReader(w.Body), func(_, data []byte) bool { return true }); err != nil {
 		t.Fatal(err)
 	}

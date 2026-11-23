@@ -1,7 +1,3 @@
-// Command nextversion prints the release plan for a commit as key=value lines, ready to append to
-// $GITHUB_OUTPUT. It is used by .github/workflows/release.yml; see README.md, "Releases".
-//
-//	go run ./scripts/nextversion -rev HEAD -bump auto
 package main
 
 import (

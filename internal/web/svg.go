@@ -9,14 +9,11 @@ import (
 	"strings"
 )
 
-// svg builds an inline SVG document. Every attribute value and text node is escaped, so the result
-// is safe to emit as template.HTML. Colors come from CSS classes (series, ramp, ink), never inline
-// styles, which keeps the page within a strict style-src 'self' CSP.
 type svg struct {
 	b strings.Builder
 }
 
-type attrs []string // alternating name, value
+type attrs []string
 
 func num(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
 
@@ -52,7 +49,6 @@ func (s *svg) text(x, y float64, class, anchor, body string, extra ...string) {
 
 func (s *svg) html() template.HTML { return template.HTML(s.b.String()) } //nolint:gosec // all content escaped above
 
-// newSVG starts a responsive chart: it scales to its container through the viewBox.
 func newSVG(w, h float64, class, label string, extra ...string) *svg {
 	s := &svg{}
 	s.open("svg", append(attrs{"viewBox", fmt.Sprintf("0 0 %s %s", num(w), num(h)), "class", class,
@@ -60,8 +56,6 @@ func newSVG(w, h float64, class, label string, extra ...string) *svg {
 	return s
 }
 
-// tip is a tooltip payload read by app.js: a heading and rows of [label, value, slot].
-// Slot -1 means no swatch. app.js renders it with textContent only.
 type tip struct {
 	H string  `json:"h"`
 	R [][]any `json:"r"`
@@ -74,7 +68,6 @@ func (t tip) attr() string {
 
 func row(label, value string, slot int) []any { return []any{label, value, slot} }
 
-// roundedTop is a bar path with 4px rounded data-end corners and a square baseline.
 func roundedTop(x, y, w, h, r float64) string {
 	r = min(r, w/2, h)
 	if r <= 0 {
@@ -85,7 +78,6 @@ func roundedTop(x, y, w, h, r float64) string {
 		num(x+w-r), num(x+w), num(y), num(x+w), num(y+r), num(y+h))
 }
 
-// roundedRight is a horizontal bar path with a rounded right end.
 func roundedRight(x, y, w, h, r float64) string {
 	r = min(r, w, h/2)
 	if r <= 0 {

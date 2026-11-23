@@ -18,11 +18,8 @@ import (
 	"ai-usage/internal/fep/token"
 )
 
-// errNoCredential means the upstream credential could not be produced (env unset, file missing,
-// command failed, az login needed). The gateway answers 503 rather than calling upstream.
 var errNoCredential = errors.New("upstream credential unavailable")
 
-// credential is the upstream token source; token.Source is the same contract the Foundry proxy uses.
 type credential = token.Source
 
 type noCred struct{}
@@ -67,8 +64,6 @@ func (c fileCred) Token(context.Context) (string, error) {
 }
 func (fileCred) Invalidate(string) {}
 
-// commandCred runs an argv (no shell) such as ["gh", "auth", "token"] or a macOS Keychain lookup,
-// and caches its first output line for ttl.
 type commandCred struct {
 	argv    []string
 	ttl     time.Duration
@@ -98,7 +93,7 @@ func (c *commandCred) Token(ctx context.Context) (string, error) {
 	defer cancel()
 	stdout, stderr, err := c.run(ctx, c.argv[0], c.argv[1:]...)
 	if err != nil {
-		// stderr is not quoted: a failing secret helper may echo the secret, and this error is logged.
+
 		return "", fmt.Errorf("%w: %s failed: %w (%d bytes of stderr withheld; run the command by hand to see it)", errNoCredential, c.argv[0], err, len(stderr))
 	}
 	line, _, _ := strings.Cut(strings.TrimSpace(string(stdout)), "\n")
@@ -161,12 +156,8 @@ func setAuthHeader(h http.Header, header, tok string) {
 	}
 }
 
-// ---- client keys ----
-
-// clientKeyPrefix marks gateway keys so they are recognizable in a leak scan.
 const clientKeyPrefix = "aigw_"
 
-// NewClientKey returns a random client key and the SHA-256 hex that goes in the config.
 func NewClientKey() (key, hash string, err error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -176,14 +167,11 @@ func NewClientKey() (key, hash string, err error) {
 	return key, HashClientKey(key), nil
 }
 
-// HashClientKey is the config form of a client key.
 func HashClientKey(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])
 }
 
-// presentedKeys returns every credential the caller sent: OpenAI clients use Authorization:
-// Bearer, Anthropic clients use x-api-key, Azure-style clients use api-key.
 func presentedKeys(r *http.Request) []string {
 	var keys []string
 	for _, v := range r.Header.Values("Authorization") {
@@ -204,8 +192,6 @@ func presentedKeys(r *http.Request) []string {
 	return keys
 }
 
-// authenticate finds the client whose key hash matches. Every configured hash is compared in
-// constant time so timing does not reveal which client, if any, nearly matched.
 func (c *Config) authenticate(r *http.Request) *Client {
 	var found *Client
 	for _, key := range presentedKeys(r) {
@@ -219,13 +205,11 @@ func (c *Config) authenticate(r *http.Request) *Client {
 	return found
 }
 
-// CredentialResult is one provider's outcome from CheckCredentials.
 type CredentialResult struct {
 	Provider, Kind, Auth string
 	Err                  error
 }
 
-// CheckCredentials resolves every provider's credential once, without calling any upstream.
 func CheckCredentials(ctx context.Context, cfg *Config, getenv func(string) string) []CredentialResult {
 	var out []CredentialResult
 	for _, name := range sortedKeys(cfg.Providers) {

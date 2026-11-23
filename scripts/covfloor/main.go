@@ -1,5 +1,3 @@
-// Command covfloor fails when a package's statement coverage in a Go coverage profile is below a
-// floor. Used by `make coverage` and CI.
 package main
 
 import (
@@ -33,9 +31,6 @@ func main() {
 	}
 }
 
-// coverage returns the percentage of statements covered in files directly inside pkg. Each
-// profile line is "file:start,end numStmts count"; a block counted twice (several test binaries)
-// is taken once.
 func coverage(profile, pkg string) (float64, error) {
 	f, err := os.Open(profile)
 	if err != nil {

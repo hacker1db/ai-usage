@@ -7,8 +7,6 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// CollectProxy reads foundry-entra-proxy request lines. They are a cross-check, not added to
-// totals, because they overlap Codex work-foundry sessions.
 func CollectProxy(agg *usage.Aggregator, logPath string) Status {
 	logPath = usage.ExpandHome(logPath)
 	st := Status{Source: usage.ToolProxy, Path: usage.Tilde(logPath)}

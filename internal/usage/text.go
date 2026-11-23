@@ -10,14 +10,11 @@ import (
 	"unicode/utf8"
 )
 
-// Home is the user's home directory, used to shorten paths to ~/...
 var Home = func() string {
 	h, _ := os.UserHomeDir()
 	return h
 }()
 
-// Secret patterns from the ai-work-report skill's claude_digest.py. Titles, prompts, and commands
-// pass through Redact before they reach a report, the history store, or a screen.
 var secretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(api[_-]?key|token|secret|password|passwd|pwd|client[_-]?secret)\s*[:=]\s*\S+`),
 	regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._~+/-]{16,}=*`),
@@ -30,7 +27,6 @@ var (
 	shortTag         = regexp.MustCompile(`<[^>]{1,80}>`)
 )
 
-// Redact replaces anything that looks like a credential with [REDACTED].
 func Redact(s string) string {
 	for _, p := range secretPatterns {
 		s = p.ReplaceAllString(s, "[REDACTED]")
@@ -38,8 +34,6 @@ func Redact(s string) string {
 	return s
 }
 
-// CleanTitle returns one redacted line of at most limit runes, or "" for empty or tool-injected
-// text (system reminders, AGENTS.md dumps, caveats).
 func CleanTitle(s string, limit int) string {
 	s = strings.TrimSpace(s)
 	if s == "" || strings.Contains(s, "<INSTRUCTIONS>") {
@@ -62,7 +56,6 @@ func CleanTitle(s string, limit int) string {
 	return strings.TrimRight(string(r[:limit-1]), " \t") + "…"
 }
 
-// Tilde shortens a path under the home directory to ~/...
 func Tilde(p string) string {
 	if Home != "" && strings.HasPrefix(p, Home) {
 		return "~" + p[len(Home):]
@@ -70,7 +63,6 @@ func Tilde(p string) string {
 	return p
 }
 
-// ExpandHome turns a leading ~/ into the home directory.
 func ExpandHome(p string) string {
 	if p == "~" {
 		return Home
@@ -86,8 +78,6 @@ var (
 	projectCache = map[string]string{}
 )
 
-// ProjectOf names the project for a session: the repository name when known, else the git root
-// of cwd (bare-clone aware: <repo>/<worktree> with <repo>/.bare reports <repo>), else the path.
 func ProjectOf(cwd, repo string) string {
 	if repo != "" {
 		name := strings.TrimSuffix(strings.TrimRight(repo, "/"), ".git")
@@ -126,7 +116,6 @@ func ProjectOf(cwd, repo string) string {
 	return name
 }
 
-// contentBlock is one element of a message content array (Claude or OpenAI Responses).
 type contentBlock struct {
 	Type  Str             `json:"type"`
 	Text  Str             `json:"text"`
@@ -134,8 +123,6 @@ type contentBlock struct {
 	Input json.RawMessage `json:"input"`
 }
 
-// FirstText returns the first text of a message content value: a plain string, or the first
-// text/input_text block of an array.
 func FirstText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -152,7 +139,6 @@ func FirstText(raw json.RawMessage) string {
 	return ""
 }
 
-// blocks decodes a content array one element at a time, skipping elements that don't decode.
 func blocks(raw json.RawMessage) []contentBlock {
 	var items []json.RawMessage
 	if json.Unmarshal(raw, &items) != nil {

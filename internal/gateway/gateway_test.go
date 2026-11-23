@@ -20,11 +20,10 @@ import (
 )
 
 const (
-	caidoKey  = "aigw_test-key-for-caido-0123456789abcdef"  // gitleaks:allow (test fixture, not a credential)
-	scriptKey = "aigw_test-key-for-script-0123456789abcdef" // gitleaks:allow (test fixture, not a credential)
+	caidoKey  = "aigw_test-key-for-caido-0123456789abcdef"  // gitleaks:allow
+	scriptKey = "aigw_test-key-for-script-0123456789abcdef" // gitleaks:allow
 )
 
-// fakeUpstream records what the gateway sent and answers with a canned handler.
 type fakeUpstream struct {
 	*httptest.Server
 	mu       sync.Mutex
@@ -208,8 +207,6 @@ const antMessageBody = `{"id":"msg_1","type":"message","role":"assistant","model
 
 func unused(http.ResponseWriter, *http.Request) {}
 
-// ---- access control ----
-
 func TestRejectsNonLoopback(t *testing.T) {
 	h := newHarness(t, unused, unused)
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
@@ -331,8 +328,6 @@ func TestBodyLimit(t *testing.T) {
 		t.Fatalf("got %d", rec.Code)
 	}
 }
-
-// ---- passthrough ----
 
 func TestOpenAIPassthrough(t *testing.T) {
 	h := newHarness(t, jsonResponse(200, oaiCompletion), unused)
@@ -465,8 +460,6 @@ func TestCountTokens(t *testing.T) {
 		t.Fatalf("estimate: %d %s", rec.Code, rec.Body)
 	}
 }
-
-// ---- translation ----
 
 func TestAnthropicClientToOpenAIUpstream(t *testing.T) {
 	h := newHarness(t, jsonResponse(200, oaiCompletion), unused)
@@ -742,8 +735,6 @@ func TestClientCancelIsLogged499(t *testing.T) {
 		t.Fatalf("status %d", l.Status)
 	}
 }
-
-// ---- helpers ----
 
 type sseEvent struct {
 	name string

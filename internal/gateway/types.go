@@ -2,12 +2,6 @@ package gateway
 
 import "encoding/json"
 
-// Wire types for the two API formats the gateway speaks. Only the fields the gateway reads or
-// writes are modeled; translation is lossy by design for features one side lacks (see
-// docs/ai-gateway.md, "Translation limits").
-
-// ---- OpenAI Chat Completions ----
-
 type oaiRequest struct {
 	Model               string            `json:"model"`
 	Messages            []oaiMessage      `json:"messages"`
@@ -29,7 +23,7 @@ type oaiStreamOptions struct {
 
 type oaiMessage struct {
 	Role       string          `json:"role"`
-	Content    json.RawMessage `json:"content,omitempty"` // string, []oaiPart, or null
+	Content    json.RawMessage `json:"content,omitempty"`
 	ToolCalls  []oaiToolCall   `json:"tool_calls,omitempty"`
 	ToolCallID string          `json:"tool_call_id,omitempty"`
 	Name       string          `json:"name,omitempty"`
@@ -84,8 +78,6 @@ type oaiChoice struct {
 	FinishReason *string    `json:"finish_reason"`
 }
 
-// oaiOutMsg is an assistant message or stream delta. Content is a pointer so a delta can omit it
-// while a full message can carry null.
 type oaiOutMsg struct {
 	Role      string        `json:"role,omitempty"`
 	Content   *string       `json:"content,omitempty"`
@@ -105,11 +97,9 @@ type oaiTokenDetails struct {
 	ReasoningTokens int64 `json:"reasoning_tokens,omitempty"`
 }
 
-// ---- Anthropic Messages ----
-
 type antRequest struct {
 	Model         string          `json:"model"`
-	System        json.RawMessage `json:"system,omitempty"` // string or []antBlock
+	System        json.RawMessage `json:"system,omitempty"`
 	Messages      []antMessage    `json:"messages"`
 	MaxTokens     int             `json:"max_tokens"`
 	Tools         []antTool       `json:"tools,omitempty"`
@@ -127,7 +117,7 @@ type antMetadata struct {
 
 type antMessage struct {
 	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"` // string or []antBlock
+	Content json.RawMessage `json:"content"`
 }
 
 type antBlock struct {
@@ -138,7 +128,7 @@ type antBlock struct {
 	Name      string          `json:"name,omitempty"`
 	Input     json.RawMessage `json:"input,omitempty"`
 	ToolUseID string          `json:"tool_use_id,omitempty"`
-	Content   json.RawMessage `json:"content,omitempty"` // tool_result: string or []antBlock
+	Content   json.RawMessage `json:"content,omitempty"`
 	IsError   bool            `json:"is_error,omitempty"`
 }
 
@@ -150,7 +140,7 @@ type antImageSource struct {
 }
 
 type antTool struct {
-	Type        string          `json:"type,omitempty"` // set for server tools, which have no schema
+	Type        string          `json:"type,omitempty"`
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	InputSchema json.RawMessage `json:"input_schema,omitempty"`
@@ -180,7 +170,6 @@ type antUsage struct {
 	CacheReadInputTokens     int64 `json:"cache_read_input_tokens,omitempty"`
 }
 
-// antStreamEvent covers every Anthropic SSE event type the gateway reads.
 type antStreamEvent struct {
 	Type         string       `json:"type"`
 	Index        int          `json:"index"`

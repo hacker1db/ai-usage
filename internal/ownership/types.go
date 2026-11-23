@@ -11,22 +11,17 @@ import (
 	"time"
 )
 
-// Account types from the GitHub users API.
 const (
 	TypeUser = "User"
 	TypeOrg  = "Organization"
 )
 
-// Types looks up whether a GitHub owner is a user or an organization with `gh api users/<owner>`,
-// so it uses gh's existing login and needs no token handling here. Answers are cached in memory
-// and, when path is set, in a small JSON file, since an account's type practically never changes.
-// Failed lookups (gh missing, offline, unknown owner) are retried after RetryAfter.
 type Types struct {
 	path   string
 	lookup func(ctx context.Context, owner string) (string, error)
 
 	mu     sync.Mutex
-	known  map[string]typeEntry // lowercased owner
+	known  map[string]typeEntry
 	failed map[string]time.Time
 	dirty  bool
 }
@@ -36,13 +31,11 @@ type typeEntry struct {
 	Checked time.Time `json:"checked"`
 }
 
-// Cache lifetimes.
 const (
 	TypeTTL    = 90 * 24 * time.Hour
 	RetryAfter = time.Hour
 )
 
-// NewTypes returns a lookup cache stored at path ("" = memory only).
 func NewTypes(path string) *Types {
 	t := &Types{path: path, lookup: ghLookup, known: map[string]typeEntry{}, failed: map[string]time.Time{}}
 	if path != "" {
@@ -53,7 +46,6 @@ func NewTypes(path string) *Types {
 	return t
 }
 
-// Of returns TypeUser, TypeOrg, or "" when unknown. Only github.com owners are looked up.
 func (t *Types) Of(owner string) string {
 	if t == nil || owner == "" {
 		return ""
@@ -84,7 +76,6 @@ func (t *Types) Of(owner string) string {
 	return typ
 }
 
-// Save writes new answers to the cache file.
 func (t *Types) Save() error {
 	if t == nil || t.path == "" {
 		return nil
@@ -120,8 +111,6 @@ func ghLookup(ctx context.Context, owner string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// IsGitHub reports whether a remote host is github.com: the host itself, ssh.github.com, or an
-// SSH config alias such as "github-work" (a dotless name containing "github").
 func IsGitHub(host string) bool {
 	h := strings.ToLower(host)
 	switch {

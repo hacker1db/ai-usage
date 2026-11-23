@@ -11,7 +11,6 @@ import (
 	"ai-usage/internal/view"
 )
 
-// Charts draw on a 960-unit-wide viewBox and scale with their container.
 const chartW = 960.0
 
 type margin struct{ top, right, bottom, left float64 }
@@ -36,7 +35,6 @@ func groupLabel(key string) string {
 	return view.Other.Label
 }
 
-// yGrid draws recessive hairline gridlines with clean tick labels.
 func yGrid(s *svg, m margin, h, yMax float64, y func(float64) float64) {
 	for i, v := range view.Ticks(yMax, 4) {
 		yy := y(v)
@@ -49,8 +47,6 @@ func yGrid(s *svg, m margin, h, yMax float64, y func(float64) float64) {
 	}
 }
 
-// cumulativeChart is the period-to-date line with its projection and optional budget. app.js
-// reads data-cum to drive the crosshair.
 func cumulativeChart(c view.Cumulative) template.HTML {
 	const h = 260.0
 	m := margin{24, 18, 30, 60}
@@ -125,9 +121,6 @@ func cumulativeChart(c view.Cumulative) template.HTML {
 	return s.html()
 }
 
-// gradients defines the decorative fills the cumulative chart uses: a vertical wash under the
-// curve and a horizontal stroke. Stop colors come from CSS classes (accent tokens), not inline
-// styles, so the page stays within style-src 'self'.
 func gradients(s *svg, x0, x1 float64) {
 	s.start("defs")
 	s.start("linearGradient", "id", "cum-fill", "x1", "0", "y1", "0", "x2", "0", "y2", "1")
@@ -135,7 +128,7 @@ func gradients(s *svg, x0, x1 float64) {
 	s.el("stop", "offset", "0.55", "class", "g-a2 g-mid")
 	s.el("stop", "offset", "1", "class", "g-a2 g-clear")
 	s.end("linearGradient")
-	// User space, so a flat line (a zero-height bounding box) still gets a stroke.
+
 	s.start("linearGradient", "id", "cum-stroke", "gradientUnits", "userSpaceOnUse", "x1", num(x0), "y1", "0", "x2", num(x1), "y2", "0")
 	s.el("stop", "offset", "0", "class", "g-a0")
 	s.el("stop", "offset", "0.6", "class", "g-a1")
@@ -144,8 +137,6 @@ func gradients(s *svg, x0, x1 float64) {
 	s.end("defs")
 }
 
-// stackedChart is usage per bucket stacked by profile: thin bars (<= 24 units), 2-unit surface
-// gaps between segments, a rounded data-end on the top segment only.
 func stackedChart(st view.Stacked) template.HTML {
 	const h = 240.0
 	m := margin{22, 18, 30, 60}
@@ -201,7 +192,6 @@ func stackedChart(st view.Stacked) template.HTML {
 	return s.html()
 }
 
-// sparkline is a profile's series over the range, in its own color.
 func sparkline(values []float64, slot int) template.HTML {
 	const w, h = 280.0, 42.0
 	s := newSVG(w, h, "spark", "trend", "preserveAspectRatio", "none", "aria-hidden", "true")
@@ -219,7 +209,6 @@ func sparkline(values []float64, slot int) template.HTML {
 	return s.html()
 }
 
-// meter is a thin budget bar: the fill carries the status, the track is a lighter wash.
 func meter(pct float64, level view.Level) template.HTML {
 	const w, h = 280.0, 8.0
 	s := newSVG(w, h, "meter", view.Pct(pct/100)+" used", "preserveAspectRatio", "none")
@@ -231,10 +220,8 @@ func meter(pct float64, level view.Level) template.HTML {
 	return s.html()
 }
 
-// heatmap is usage by weekday and hour on the sequential ramp (one hue, light to dark).
 func heatmap(hm view.Heatmap) template.HTML {
-	// Drawn on its own narrower canvas: it sits in a half-width card, and a 960-wide viewBox
-	// would shrink its labels below legibility.
+
 	const w = 600.0
 	m := margin{20, 4, 4, 34}
 	cell := (w - m.left - m.right) / 24
@@ -263,8 +250,6 @@ func heatmap(hm view.Heatmap) template.HTML {
 
 var mixParts = []string{"Cache read", "Fresh input", "Output"}
 
-// mixBar is one profile's token composition as a tall segmented bar: each part its own block with
-// 4-unit corners and its share printed inside when it fits.
 func mixBar(mx view.Mix) template.HTML {
 	const w, h = 640.0, 28.0
 	total := mx.Total()
@@ -293,7 +278,6 @@ func mixBar(mx view.Mix) template.HTML {
 	return s.html()
 }
 
-// shareBar is a thin fully rounded bar showing a share of the whole.
 func shareBar(share float64) template.HTML {
 	const w, h = 120.0, 6.0
 	s := newSVG(w, h, "share", view.Pct(share), "preserveAspectRatio", "none")
@@ -305,7 +289,6 @@ func shareBar(share float64) template.HTML {
 	return s.html()
 }
 
-// projectsChart is usage per repository, stacked by profile, with value, active time, and sessions.
 func projectsChart(ps []view.Project, unit string) template.HTML {
 	const rowH = 30.0
 	m := margin{6, 250, 20, 200}
@@ -369,7 +352,6 @@ func projectsChart(ps []view.Project, unit string) template.HTML {
 	return s.html()
 }
 
-// crossCheckChart pairs the proxy's daily tokens with Codex Foundry's, which should track closely.
 func crossCheckChart(days []view.DayPair) template.HTML {
 	const h = 170.0
 	m := margin{14, 18, 28, 60}

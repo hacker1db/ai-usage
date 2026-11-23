@@ -14,12 +14,8 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// SQLitePath is the sqlite3 CLI used to read the Copilot session store. macOS ships it, which keeps
-// this module free of a database driver; the store is opened -readonly.
 var SQLitePath = "/usr/bin/sqlite3"
 
-// queryJSON runs one read-only statement and decodes its rows. sqlite3 prints nothing for an empty
-// result, which decodes as no rows.
 func queryJSON[T any](ctx context.Context, db, sql string) ([]T, error) {
 	bin := SQLitePath
 	if _, err := os.Stat(bin); err != nil {
@@ -67,8 +63,6 @@ type copilotSession struct {
 	Summary    usage.Str `json:"summary"`
 }
 
-// CollectCopilot reads the GitHub Copilot CLI session store's assistant_usage_events, plus session
-// titles, prompts, files, and refs when those tables exist.
 func CollectCopilot(agg *usage.Aggregator, dbPath string) Status {
 	dbPath = usage.ExpandHome(dbPath)
 	st := Status{Source: usage.ToolCopilot, Path: usage.Tilde(dbPath)}
@@ -79,7 +73,6 @@ func CollectCopilot(agg *usage.Aggregator, dbPath string) Status {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// The cutoff is formatted by us, never user input, so inlining it is safe.
 	cutoff := agg.Cutoff.UTC().Format("2006-01-02T15:04:05")
 	inWindow := fmt.Sprintf("SELECT DISTINCT session_id FROM assistant_usage_events WHERE created_at >= '%s'", cutoff)
 	events, err := queryJSON[copilotEvent](ctx, dbPath, fmt.Sprintf(
@@ -96,7 +89,6 @@ func CollectCopilot(agg *usage.Aggregator, dbPath string) Status {
 		return st
 	}
 
-	// Detail tables are newer than the usage table; a store without them still reports usage.
 	extra := map[string]*usage.Meta{}
 	metaOf := func(sid string) *usage.Meta {
 		if extra[sid] == nil {

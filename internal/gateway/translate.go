@@ -9,14 +9,9 @@ import (
 	"time"
 )
 
-// defaultAnthropicMaxTokens fills Anthropic's required max_tokens when an OpenAI client sends none.
 const defaultAnthropicMaxTokens = 8192
 
 var errBadContent = errors.New("unsupported message content")
-
-// ---------------------------------------------------------------------------------------------
-// Anthropic Messages request -> OpenAI Chat Completions request
-// ---------------------------------------------------------------------------------------------
 
 func anthropicToOpenAIRequest(in *antRequest, upstreamModel, maxTokensField string) (*oaiRequest, error) {
 	out := &oaiRequest{
@@ -61,7 +56,7 @@ func anthropicToOpenAIRequest(in *antRequest, upstreamModel, maxTokensField stri
 
 	for _, t := range in.Tools {
 		if len(t.InputSchema) == 0 {
-			// Server tools (web search, code execution, ...) have no OpenAI equivalent.
+
 			continue
 		}
 		out.Tools = append(out.Tools, oaiTool{Type: "function", Function: oaiFunction{
@@ -121,8 +116,6 @@ func anthropicBlocks(raw json.RawMessage) ([]antBlock, error) {
 	return blocks, nil
 }
 
-// anthropicMessageToOpenAI maps one Anthropic message to one or more OpenAI messages: tool_result
-// blocks become separate "tool" messages, which OpenAI requires to follow the assistant call.
 func anthropicMessageToOpenAI(m antMessage) ([]oaiMessage, error) {
 	blocks, err := anthropicBlocks(m.Content)
 	if err != nil {
@@ -162,7 +155,7 @@ func anthropicMessageToOpenAI(m antMessage) ([]oaiMessage, error) {
 			}
 			out = append(out, oaiMessage{Role: "tool", ToolCallID: b.ToolUseID, Content: jsonString(text)})
 		default:
-			// thinking, redacted_thinking, documents, server tool blocks: no portable equivalent.
+
 		}
 	}
 
@@ -212,7 +205,6 @@ func joinText(parts []oaiPart) string {
 	return b.String()
 }
 
-// userContent keeps plain-text turns as a string, which every OpenAI-compatible server accepts.
 func userContent(parts []oaiPart) json.RawMessage {
 	if len(parts) == 1 && parts[0].Type == "text" {
 		return jsonString(parts[0].Text)
@@ -220,10 +212,6 @@ func userContent(parts []oaiPart) json.RawMessage {
 	raw, _ := json.Marshal(parts)
 	return raw
 }
-
-// ---------------------------------------------------------------------------------------------
-// OpenAI Chat Completions request -> Anthropic Messages request
-// ---------------------------------------------------------------------------------------------
 
 func openAIToAnthropicRequest(in *oaiRequest, upstreamModel string) (*antRequest, error) {
 	out := &antRequest{
@@ -257,7 +245,7 @@ func openAIToAnthropicRequest(in *oaiRequest, upstreamModel string) (*antRequest
 		if len(blocks) == 0 {
 			return
 		}
-		// Anthropic requires alternating roles; merge consecutive turns of the same role.
+
 		if n := len(msgs); n > 0 && msgs[n-1].Role == role {
 			var prev []antBlock
 			_ = json.Unmarshal(msgs[n-1].Content, &prev)
@@ -347,7 +335,6 @@ func openAIToAnthropicRequest(in *oaiRequest, upstreamModel string) (*antRequest
 	return out, nil
 }
 
-// toolInput turns OpenAI's JSON-string arguments into an Anthropic input object.
 func toolInput(args string) json.RawMessage {
 	args = strings.TrimSpace(args)
 	if args == "" {
@@ -419,10 +406,6 @@ func imageSource(url string) *antImageSource {
 	}
 	return &antImageSource{Type: "url", URL: url}
 }
-
-// ---------------------------------------------------------------------------------------------
-// Non-streamed responses
-// ---------------------------------------------------------------------------------------------
 
 func openAIToAnthropicResponse(in *oaiResponse, alias string) *antResponse {
 	out := &antResponse{ID: anthropicID(in.ID), Type: "message", Role: "assistant", Model: alias, Content: []antBlock{}}

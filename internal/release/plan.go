@@ -8,32 +8,26 @@ import (
 	"strings"
 )
 
-// Action is what the release job should do for a commit.
 type Action string
 
 const (
-	// Create means tag the commit with Plan.Tag and publish a release.
 	Create Action = "create"
-	// Existing means the commit already carries a version tag (for example a signed tag pushed by
-	// hand); publish its release if missing and notify the tap, but never cut a second version.
+
 	Existing Action = "existing"
-	// Skip means nothing since the last release asks for one (docs, chore, ci, test, style).
+
 	Skip Action = "skip"
-	// Superseded means a newer release exists that the commit does not contain, as when an old
-	// run is re-run after later pushes were released. Releasing it would reuse or reorder tags.
+
 	Superseded Action = "superseded"
 )
 
-// Plan is the release decision for one commit.
 type Plan struct {
 	Action   Action
-	Tag      string // tag to create or reuse; empty for Skip and Superseded
-	Previous string // newest release tag reachable from the commit
+	Tag      string
+	Previous string
 	Commit   string
 	Reason   string
 }
 
-// Git runs git in Dir.
 type Git struct{ Dir string }
 
 func (g Git) run(args ...string) (string, error) {
@@ -47,7 +41,6 @@ func (g Git) run(args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-// versionTags returns every vX.Y.Z tag in the repository, keyed by name.
 func (g Git) versionTags(extra ...string) (map[string]Version, error) {
 	out, err := g.run(append([]string{"tag", "--list", "v*"}, extra...)...)
 	if err != nil {
@@ -72,8 +65,6 @@ func newest(tags map[string]Version) (string, bool) {
 	return best, found
 }
 
-// MakePlan decides what to release for rev. force, when not None, replaces the computed bump.
-// It reads local refs only; the caller fetches tags first.
 func MakePlan(g Git, rev string, force Bump) (Plan, error) {
 	out, err := g.run("rev-parse", "--verify", rev+"^{commit}")
 	if err != nil {

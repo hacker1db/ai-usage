@@ -158,14 +158,13 @@ func TestInvalidateOnlyDropsRejectedToken(t *testing.T) {
 	if tok, _ := src.Token(ctx); tok != "tok-2" || f.calls != 2 {
 		t.Fatalf("after invalidating tok-1: token = %q, az calls = %d", tok, f.calls)
 	}
-	// A late 401 for the old token must not discard its replacement.
+
 	src.Invalidate("tok-1")
 	if tok, _ := src.Token(ctx); tok != "tok-2" || f.calls != 2 {
 		t.Fatalf("stale invalidate: token = %q, az calls = %d", tok, f.calls)
 	}
 }
 
-// gatedAz blocks every az call until release is closed and counts calls.
 type gatedAz struct {
 	mu      sync.Mutex
 	calls   int
@@ -218,7 +217,7 @@ func TestTokenSharesOneFlight(t *testing.T) {
 		})
 	}
 	<-g.started
-	// Give the other callers time to join the flight before releasing it.
+
 	time.Sleep(50 * time.Millisecond)
 	close(g.release)
 	wg.Wait()
@@ -266,7 +265,6 @@ func TestTokenWaitHonorsCallerContext(t *testing.T) {
 	src := newTestSource(&fakeAz{}, &now)
 	src.Run = g.run
 
-	// The first caller starts az and then gives up; that must not abort the shared acquisition.
 	leaderCtx, cancelLeader := context.WithCancel(context.Background())
 	leaderErr := make(chan error, 1)
 	go func() {
@@ -275,7 +273,6 @@ func TestTokenWaitHonorsCallerContext(t *testing.T) {
 	}()
 	<-g.started
 
-	// A waiter with a short deadline returns on its own deadline while az is still running.
 	waitCtx, cancelWait := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancelWait()
 	start := time.Now()
@@ -291,7 +288,6 @@ func TestTokenWaitHonorsCallerContext(t *testing.T) {
 		t.Fatalf("leader err = %v, want Canceled", err)
 	}
 
-	// A later caller joins the still-running flight and gets its result.
 	got := make(chan string, 1)
 	go func() {
 		tok, _ := src.Token(context.Background())

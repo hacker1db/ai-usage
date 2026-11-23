@@ -7,18 +7,14 @@ import (
 	"strings"
 )
 
-// MaxProfileSets caps the named profile filters; more than this crowds the filter bar.
 const MaxProfileSets = 12
 
-// ProfileSet is a named dashboard filter over tool:profile series, from the profiles: key of
-// projects.yaml. A pattern is "tool:profile" or a bare "profile" (any tool); both take * globs.
 type ProfileSet struct {
 	Name     string   `json:"name"`
 	Label    string   `json:"label"`
 	Patterns []string `json:"patterns"`
 }
 
-// MatchProfile reports whether a tool/profile pair matches one pattern.
 func MatchProfile(pattern, tool, profile string) bool {
 	p := strings.ToLower(pattern)
 	if strings.Contains(p, ":") {
@@ -29,7 +25,6 @@ func MatchProfile(pattern, tool, profile string) bool {
 	return ok
 }
 
-// Match reports whether a tool/profile pair belongs to the set.
 func (s ProfileSet) Match(tool, profile string) bool {
 	for _, p := range s.Patterns {
 		if MatchProfile(p, tool, profile) {
@@ -39,14 +34,6 @@ func (s ProfileSet) Match(tool, profile string) bool {
 	return false
 }
 
-// parseProfiles reads the profiles: mapping. Each entry is a list of patterns, or a mapping with
-// match: (the patterns) and an optional label: (the display name).
-//
-//	profiles:
-//	  personal: [claude-code:personal, codex:personal-chatgpt]
-//	  foundry:
-//	    label: Azure Foundry
-//	    match: [work-foundry]
 func parseProfiles(v any) ([]ProfileSet, error) {
 	if v == nil {
 		return nil, nil

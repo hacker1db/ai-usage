@@ -18,7 +18,6 @@ import (
 	"ai-usage/internal/view"
 )
 
-// fixture is a small snapshot with two profiles, a session, and proxy rows.
 func fixture(now time.Time) *snapshot.Snapshot {
 	var rows []history.HourRow
 	for h := 0; h < 72; h++ {
@@ -154,7 +153,7 @@ func TestProfileBarRenders(t *testing.T) {
 		if i < 0 {
 			t.Fatal("no profile bar")
 		}
-		return b[i : i+strings.Index(b[i:], "</nav>")] // the profile bar only
+		return b[i : i+strings.Index(b[i:], "</nav>")]
 	}
 	body := render(view.Filters{Profile: "mine"}.Normalize())
 	if strings.Contains(body, "<i>Me") {
@@ -177,7 +176,7 @@ func TestProfileBarRenders(t *testing.T) {
 	if c := chip(body, "?"); strings.Contains(c, "aria-current") || !strings.Contains(c, "pchip all") {
 		t.Errorf("all chip = %s", c)
 	}
-	if strings.Count(body, `<a class="pchip`) != 4 { // all, mine, claude-code:personal, codex:work-foundry
+	if strings.Count(body, `<a class="pchip`) != 4 {
 		t.Errorf("chips = %d:\n%s", strings.Count(body, `<a class="pchip`), body)
 	}
 

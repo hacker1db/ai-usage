@@ -1,5 +1,3 @@
-// Command foundry-entra-proxy is a loopback proxy that lets OpenAI-compatible clients reach
-// Entra-only Azure AI Foundry deployments using the developer's Azure CLI session.
 package main
 
 import (
@@ -109,8 +107,6 @@ func run() error {
 	return shutdown(srv, 10*time.Second, logger)
 }
 
-// shutdown drains srv gracefully for up to timeout. Requests still running then (typically long
-// streams) are dropped with srv.Close; that is a normal stop, not a failure.
 func shutdown(srv *http.Server, timeout time.Duration, logger *slog.Logger) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

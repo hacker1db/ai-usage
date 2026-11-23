@@ -9,21 +9,17 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// ClaudeDir is a Claude Code config dir (CLAUDE_CONFIG_DIR) and its profile label.
 type ClaudeDir struct {
-	Path  string // may start with ~/
+	Path  string
 	Label string
 }
 
-// ClaudeProfiles are the current per-profile config dirs.
 var ClaudeProfiles = []ClaudeDir{
 	{"~/.claude-personal", "personal"},
 	{"~/.claude-subscription", "work-subscription"},
 	{"~/.claude-foundry", "work-foundry"},
 }
 
-// DefaultClaudeDirs is the current profiles, then retired ~/.claude copies ("legacy"), then a live
-// ~/.claude ("no-profile": sessions launched without CLAUDE_CONFIG_DIR). Dedupe keeps the first hit.
 func DefaultClaudeDirs() []ClaudeDir {
 	dirs := append([]ClaudeDir(nil), ClaudeProfiles...)
 	retired, _ := filepath.Glob(filepath.Join(usage.Home, ".claude.retired-*"))
@@ -39,7 +35,6 @@ func DefaultClaudeDirs() []ClaudeDir {
 	return dirs
 }
 
-// editTools are tool names whose file_path input counts as a changed file.
 var editTools = map[string]bool{
 	"Edit": true, "Write": true, "MultiEdit": true, "NotebookEdit": true,
 	"create": true, "edit": true, "apply_patch": true, "str_replace_editor": true,
@@ -85,18 +80,16 @@ type toolInput struct {
 }
 
 type claudeRecord struct {
-	dedupe string // message id + request id; "" when neither is present
+	dedupe string
 	rec    usage.Record
 }
 
-// ClaudeFile is one parsed transcript: usage records plus per-session metadata.
 type ClaudeFile struct {
 	records []claudeRecord
 	meta    map[string]*usage.Meta
-	err     string // read failure; records hold whatever was read before it
+	err     string
 }
 
-// ParseClaudeFile reads one Claude Code transcript.
 func ParseClaudeFile(path string) ClaudeFile {
 	out := ClaudeFile{meta: map[string]*usage.Meta{}}
 	fallback := strings.TrimSuffix(filepath.Base(path), ".jsonl")
@@ -167,7 +160,7 @@ func ParseClaudeFile(path string) ClaudeFile {
 			}
 			return
 		}
-		// assistant: tool calls, then usage
+
 		if msg.Content != nil {
 			var items []json.RawMessage
 			if json.Unmarshal(msg.Content, &items) == nil {
@@ -206,7 +199,7 @@ func ParseClaudeFile(path string) ClaudeFile {
 				}
 			}
 		}
-		// A missing, null, or empty usage object is skipped; an all-zero one still counts as a request.
+
 		var u claudeUsage
 		if raw := strings.TrimSpace(string(msg.Usage)); raw == "" || raw == "null" || raw == "{}" ||
 			raw[0] != '{' || json.Unmarshal(msg.Usage, &u) != nil || msg.Model == "<synthetic>" {
@@ -230,9 +223,6 @@ func ParseClaudeFile(path string) ClaudeFile {
 	return out
 }
 
-// CollectClaude adds every profile's transcripts. Streaming writes one line per content block with
-// the same usage, and a message can exist in a retired copy of a profile dir, so records are
-// deduplicated on (message id, request id) across all dirs.
 func CollectClaude(agg *usage.Aggregator, dirs []ClaudeDir, cache *FileCache[ClaudeFile]) []Status {
 	if cache == nil {
 		cache = NewFileCache[ClaudeFile]()

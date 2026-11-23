@@ -281,7 +281,7 @@ func TestResolveAlias(t *testing.T) {
 	}
 	for in, want := range map[string]string{
 		"m": "m", "openai/m": "m", "anthropic/m": "m",
-		"openai/gpt-x": "openai/gpt-x", // an exact alias that has a slash wins
+		"openai/gpt-x": "openai/gpt-x",
 		"google/m":     "google/m", "openai/nope": "openai/nope",
 	} {
 		if got := cfg.resolveAlias(in); got != want {
@@ -290,7 +290,6 @@ func TestResolveAlias(t *testing.T) {
 	}
 }
 
-// The committed example must stay a valid config once real key hashes are filled in.
 func TestExampleConfigParses(t *testing.T) {
 	raw, err := os.ReadFile("../../ai-gateway.example.json")
 	if err != nil {

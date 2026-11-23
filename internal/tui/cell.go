@@ -1,5 +1,3 @@
-// Package tui renders view.Dashboard models as a terminal dashboard: a document of styled cell
-// lines that renders to ANSI text, shared by the live screen and `ai-usage tui -once`.
 package tui
 
 import (
@@ -9,43 +7,36 @@ import (
 	"ai-usage/internal/palette"
 )
 
-// Style is a cell's appearance. Colors are #rrggbb hex, "" for the terminal default.
 type Style struct {
 	FG, BG                   string
 	Bold, Inverse, Underline bool
 }
 
-// Cell is one terminal column. A wide rune is followed by a Cell with R == 0 that renders nothing.
 type Cell struct {
 	R rune
 	S Style
 }
 
-// Line is one row of cells.
 type Line []Cell
 
-// Escapes selects how much terminal styling to emit.
 type Escapes int
 
 const (
-	NoEscapes Escapes = iota // plain text (piped output)
-	StyleOnly                // bold/underline/inverse but no color (NO_COLOR)
-	FullColor                // 24-bit color
+	NoEscapes Escapes = iota
+	StyleOnly
+	FullColor
 )
 
-// Theme selects the palette mode and the styling level.
 type Theme struct {
 	Mode    palette.Mode
 	Ink     palette.Ink
 	Escapes Escapes
 }
 
-// NewTheme returns a theme for mode.
 func NewTheme(mode palette.Mode, esc Escapes) Theme {
 	return Theme{Mode: mode, Ink: palette.Inks[mode], Escapes: esc}
 }
 
-// Series returns a categorical slot's color (0 = Other).
 func (t Theme) Series(slot int) string {
 	s := palette.Series[t.Mode]
 	if slot < 0 || slot >= len(s) {
@@ -54,13 +45,11 @@ func (t Theme) Series(slot int) string {
 	return s[slot] //nolint:gosec // G602: slot is clamped to [0, len(s)) above.
 }
 
-// Text styles built from ink tokens. Text never wears a series color.
 func (t Theme) Primary() Style   { return Style{FG: t.Ink.Primary} }
 func (t Theme) Secondary() Style { return Style{FG: t.Ink.Secondary} }
 func (t Theme) Muted() Style     { return Style{FG: t.Ink.Muted} }
 func (t Theme) Title() Style     { return Style{FG: t.Ink.Primary, Bold: true} }
 
-// Accent is decorative chrome color i (wrapping); it never encodes data.
 func (t Theme) Accent(i int) Style {
 	a := palette.Accent[t.Mode]
 	return Style{FG: a[((i%len(a))+len(a))%len(a)], Bold: true}
@@ -69,7 +58,6 @@ func (t Theme) Status(level string) Style {
 	return Style{FG: palette.Status[level]}
 }
 
-// RuneWidth is the display width of r: 0 for combining marks, 2 for wide East Asian and emoji.
 func RuneWidth(r rune) int {
 	switch {
 	case r == 0:
@@ -86,7 +74,6 @@ func RuneWidth(r rune) int {
 	return 1
 }
 
-// Width is the display width of s.
 func Width(s string) int {
 	n := 0
 	for _, r := range s {
@@ -95,7 +82,6 @@ func Width(s string) int {
 	return n
 }
 
-// Truncate shortens s to at most w columns, ending with … when cut.
 func Truncate(s string, w int) string {
 	if w <= 0 {
 		return ""
@@ -116,22 +102,18 @@ func Truncate(s string, w int) string {
 	return strings.TrimRight(b.String(), " ") + "…"
 }
 
-// PadRight pads s with spaces to w columns (truncating when longer).
 func PadRight(s string, w int) string {
 	s = Truncate(s, w)
 	return s + strings.Repeat(" ", max(w-Width(s), 0))
 }
 
-// PadLeft right-aligns s in w columns.
 func PadLeft(s string, w int) string {
 	s = Truncate(s, w)
 	return strings.Repeat(" ", max(w-Width(s), 0)) + s
 }
 
-// B builds a Line.
 type B struct{ l Line }
 
-// T appends text in a style.
 func (b *B) T(s string, st Style) *B {
 	for _, r := range s {
 		w := RuneWidth(r)
@@ -146,13 +128,11 @@ func (b *B) T(s string, st Style) *B {
 	return b
 }
 
-// C appends one cell.
 func (b *B) C(r rune, st Style) *B {
 	b.l = append(b.l, Cell{r, st})
 	return b
 }
 
-// Sp appends n spaces.
 func (b *B) Sp(n int) *B {
 	for range max(n, 0) {
 		b.l = append(b.l, Cell{' ', Style{}})
@@ -160,21 +140,17 @@ func (b *B) Sp(n int) *B {
 	return b
 }
 
-// To pads with spaces up to column col.
 func (b *B) To(col int) *B { return b.Sp(col - len(b.l)) }
 
-// Len is the current width.
 func (b *B) Len() int { return len(b.l) }
 
-// Line returns the line fitted to width w.
 func (b *B) Line(w int) Line { return fit(b.l, w) }
 
-// fit truncates or pads a line to exactly w cells without splitting a wide rune.
 func fit(l Line, w int) Line {
 	out := make(Line, w)
 	n := copy(out, l)
 	if n == w && len(l) > w && l[w].R == 0 {
-		out[w-1] = Cell{' ', Style{}} // the wide rune's second half fell off the edge
+		out[w-1] = Cell{' ', Style{}}
 	}
 	for i := n; i < w; i++ {
 		out[i] = Cell{' ', Style{}}
@@ -182,26 +158,20 @@ func fit(l Line, w int) Line {
 	return out
 }
 
-// Doc is a sequence of lines of a fixed width.
 type Doc struct {
 	W     int
 	Lines []Line
-	sec   int // sections drawn so far, to rotate their accent colors
+	sec   int
 }
 
-// Add appends a builder's line.
 func (d *Doc) Add(b *B) { d.Lines = append(d.Lines, b.Line(d.W)) }
 
-// AddLine appends a prepared line.
 func (d *Doc) AddLine(l Line) { d.Lines = append(d.Lines, fit(l, d.W)) }
 
-// Blank appends an empty line.
 func (d *Doc) Blank() { d.Lines = append(d.Lines, fit(nil, d.W)) }
 
-// Text appends a single-style line.
 func (d *Doc) Text(s string, st Style) { d.Add(new(B).T(s, st)) }
 
-// Render writes lines as ANSI text separated by sep at the given styling level.
 func Render(lines []Line, esc Escapes, sep string) string {
 	var b strings.Builder
 	for i, l := range lines {
@@ -260,7 +230,6 @@ func sgr(s Style) string {
 	return "\x1b[" + strings.Join(codes, ";") + "m"
 }
 
-// Plain returns a line's text without styling (for tests).
 func Plain(l Line) string {
 	var b strings.Builder
 	for _, c := range l {

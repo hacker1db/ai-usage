@@ -1,13 +1,3 @@
-// Package release decides the next semantic version from Conventional Commit messages.
-//
-// Policy (also documented in README.md, "Releases"):
-//
-//   - A breaking change (`type!:` or a `BREAKING CHANGE:` footer) bumps major, or minor while
-//     the major version is 0.
-//   - `feat` bumps minor.
-//   - `docs`, `chore`, `ci`, `test`, and `style` alone do not release.
-//   - Anything else, including messages that are not Conventional Commits, bumps patch, so a
-//     code change is never silently left unreleased.
 package release
 
 import (
@@ -17,7 +7,6 @@ import (
 	"strings"
 )
 
-// Bump is the size of a version increment. The zero value means "no release".
 type Bump int
 
 const (
@@ -31,7 +20,6 @@ func (b Bump) String() string {
 	return [...]string{"none", "patch", "minor", "major"}[b]
 }
 
-// ParseBump accepts "patch", "minor", or "major".
 func ParseBump(s string) (Bump, error) {
 	switch s {
 	case "patch":
@@ -44,12 +32,10 @@ func ParseBump(s string) (Bump, error) {
 	return None, fmt.Errorf("unknown bump %q (want patch, minor, or major)", s)
 }
 
-// Version is a release version vMAJOR.MINOR.PATCH. Pre-release and build suffixes are not used.
 type Version struct{ Major, Minor, Patch int }
 
 var tagRE = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
-// ParseTag parses a tag of the exact form vX.Y.Z.
 func ParseTag(tag string) (Version, error) {
 	m := tagRE.FindStringSubmatch(tag)
 	if m == nil {
@@ -67,7 +53,6 @@ func ParseTag(tag string) (Version, error) {
 
 func (v Version) String() string { return fmt.Sprintf("v%d.%d.%d", v.Major, v.Minor, v.Patch) }
 
-// Less reports whether v sorts before w.
 func (v Version) Less(w Version) bool {
 	if v.Major != w.Major {
 		return v.Major < w.Major
@@ -78,7 +63,6 @@ func (v Version) Less(w Version) bool {
 	return v.Patch < w.Patch
 }
 
-// Apply returns v incremented by b. While Major is 0, a major bump only bumps minor.
 func (v Version) Apply(b Bump) Version {
 	switch b {
 	case Major:
@@ -100,7 +84,6 @@ var (
 	noRelease  = map[string]bool{"docs": true, "chore": true, "ci": true, "test": true, "style": true}
 )
 
-// Classify returns the bump one full commit message (subject plus body) asks for.
 func Classify(message string) Bump {
 	message = strings.TrimSpace(strings.ReplaceAll(message, "\r\n", "\n"))
 	if message == "" {
@@ -124,7 +107,6 @@ func Classify(message string) Bump {
 	return Patch
 }
 
-// Max returns the largest bump any of messages asks for.
 func Max(messages []string) Bump {
 	b := None
 	for _, m := range messages {
@@ -135,8 +117,6 @@ func Max(messages []string) Bump {
 	return b
 }
 
-// Next returns the version to release after last given the commit messages since it, and
-// whether a release is due. force, when not None, overrides the computed bump.
 func Next(last string, messages []string, force Bump) (Version, bool, error) {
 	v, err := ParseTag(last)
 	if err != nil {

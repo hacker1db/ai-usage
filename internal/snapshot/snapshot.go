@@ -1,6 +1,3 @@
-// Package snapshot builds the dashboard's data: hourly rows (merged with the history store),
-// sessions, source status, budgets, and the optional ai-work-report overlay. The web server and
-// the TUI render the same Snapshot, and /api/usage serves it as JSON.
 package snapshot
 
 import (
@@ -25,7 +22,6 @@ import (
 	"ai-usage/internal/workreport"
 )
 
-// Meta describes one collection.
 type Meta struct {
 	Generated       time.Time `json:"generated"`
 	Since           time.Time `json:"since"`
@@ -48,18 +44,16 @@ type Meta struct {
 	Ownership       Ownership `json:"ownership"`
 }
 
-// Ownership describes the rules that labeled the sessions.
 type Ownership struct {
-	Source  string   `json:"source"`  // config path, or how the automatic rules were chosen
-	Auto    bool     `json:"auto"`    // no config file
-	Labels  []string `json:"labels"`  // display order
-	Default string   `json:"default"` // label when no rule matches
+	Source  string   `json:"source"`
+	Auto    bool     `json:"auto"`
+	Labels  []string `json:"labels"`
+	Default string   `json:"default"`
 	Warning string   `json:"warning"`
-	// Profiles are the named profile filters from projects.yaml's profiles: key.
+
 	Profiles []ownership.ProfileSet `json:"profiles,omitempty"`
 }
 
-// Snapshot is everything a dashboard view needs.
 type Snapshot struct {
 	Meta       Meta                     `json:"meta"`
 	Sources    []sources.Status         `json:"sources"`
@@ -68,30 +62,25 @@ type Snapshot struct {
 	Rows       []history.HourRow        `json:"rows"`
 	Sessions   []usage.SessionRow       `json:"sessions"`
 	WorkReport *workreport.Report       `json:"work_report"`
-	// Costs are provider-reported billing (Azure Cost Management, GitHub billing), one entry per
-	// configured account and month. They are never derived from or added to token counts.
+
 	Costs []billing.Status `json:"costs,omitempty"`
 }
 
-// Options configure a Collector.
 type Options struct {
-	Days          int           // history to load (2-400)
-	Interval      time.Duration // between collections
+	Days          int
+	Interval      time.Duration
 	Sources       sources.Options
-	ConfigPath    string // budgets (dashboard.json)
-	HistoryPath   string // hourly store ("" = memory only)
-	ReadOnly      bool   // never write the history store
+	ConfigPath    string
+	HistoryPath   string
+	ReadOnly      bool
 	WorkReportDir string
-	ProjectsPath  string // ownership rules (projects.yaml)
+	ProjectsPath  string
 	Logger        *slog.Logger
-	BillingRun    billing.Run // provider CLI runner for billing queries (nil = az / gh)
-	// BillingCache is the billing state shared by every ai-usage process ("" = memory only). It is
-	// written even when the history store is read-only, so the TUI and the dashboard share one
-	// query schedule and stay inside provider rate limits.
+	BillingRun    billing.Run
+
 	BillingCache string
 }
 
-// Collector rebuilds the snapshot on a timer or on request.
 type Collector struct {
 	opts    Options
 	caches  *sources.Caches
@@ -106,11 +95,10 @@ type Collector struct {
 	ready chan struct{}
 	once  sync.Once
 	owner *ownership.Classifier
-	types *ownership.Types // GitHub user-or-org answers, cached next to the history store
+	types *ownership.Types
 	costs *costs
 }
 
-// New returns a collector; call Run to start collecting.
 func New(o Options) *Collector {
 	o.Days = min(max(o.Days, 2), 400)
 	if o.Interval < 5*time.Second {
@@ -133,7 +121,6 @@ func New(o Options) *Collector {
 	return c
 }
 
-// Run collects immediately, then on every interval or Wake, until ctx ends.
 func (c *Collector) Run(ctx context.Context) {
 	t := time.NewTicker(c.opts.Interval)
 	defer t.Stop()
@@ -149,7 +136,6 @@ func (c *Collector) Run(ctx context.Context) {
 	}
 }
 
-// Wake asks Run to collect now.
 func (c *Collector) Wake() {
 	select {
 	case c.wake <- struct{}{}:
@@ -157,10 +143,8 @@ func (c *Collector) Wake() {
 	}
 }
 
-// Ready is closed after the first collection finishes (successfully or not).
 func (c *Collector) Ready() <-chan struct{} { return c.ready }
 
-// Refresh collects once; on failure the last good snapshot keeps being served.
 func (c *Collector) Refresh() {
 	defer c.once.Do(func() { close(c.ready) })
 	snap, err := c.build(time.Now())
@@ -185,15 +169,12 @@ func (c *Collector) Refresh() {
 		"cached", m.CacheHits, "history_only", m.HistoryOnlyRows)
 }
 
-// Current returns the latest snapshot, its JSON, and its ETag; snap is nil before the first success.
 func (c *Collector) Current() (snap *Snapshot, body []byte, etag string, err error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.snap, c.body, c.etag, c.err
 }
 
-// Session returns one session with its detail from the history store, labeled by the rules from
-// the latest collection.
 func (c *Collector) Session(key string) (usage.SessionRow, bool) {
 	x, ok := c.history.Session(key)
 	c.mu.RLock()
@@ -232,7 +213,7 @@ func (c *Collector) build(now time.Time) (*Snapshot, error) {
 	costs, costWarn := c.costs.current()
 	_, cfgErr := os.Stat(o.ConfigPath)
 	histRows, histSince := c.history.Stats()
-	// Rules are reread every collection, so editing projects.yaml applies on the next refresh.
+
 	cls := ownership.Load(o.ProjectsPath, c.types)
 	sessions := c.history.SessionsSince(cutoff)
 	for i := range sessions {
@@ -272,7 +253,6 @@ func tildeOr(p string) string {
 	return usage.Tilde(p)
 }
 
-// Decode parses a /api/usage body (used by the TUI when a dashboard is already running).
 func Decode(body []byte) (*Snapshot, error) {
 	var s Snapshot
 	if err := json.Unmarshal(body, &s); err != nil {

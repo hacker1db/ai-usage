@@ -116,7 +116,6 @@ func TestParseRemote(t *testing.T) {
 	}
 }
 
-// stubTypes answers lookups from a map and counts calls.
 func stubTypes(path string, answers map[string]string, calls *int) *Types {
 	t := NewTypes(path)
 	t.lookup = func(_ context.Context, owner string) (string, error) {
@@ -139,7 +138,7 @@ func TestTypesCache(t *testing.T) {
 	if first, again := ty.Of("ghost"), ty.Of("ghost"); first != "" || again != "" {
 		t.Fatal("unknown owner got a type")
 	}
-	if calls != 3 { // the repeat and the failed retry are both cached
+	if calls != 3 {
 		t.Errorf("lookups = %d, want 3", calls)
 	}
 	must(t, ty.Save())
@@ -150,8 +149,6 @@ func TestTypesCache(t *testing.T) {
 	}
 }
 
-// repo makes a git checkout at dir with the given origin, or a bare-clone layout (repo/.bare plus
-// a repo/main worktree) when bare is true; it returns the working directory.
 func repo(t *testing.T, dir, origin string, bare bool) string {
 	t.Helper()
 	cfg := "[core]\n\tbare = false\n[remote \"upstream\"]\n\turl = git@github.com:other/x.git\n[remote \"origin\"]\n\turl = " + origin + "\n"
@@ -207,7 +204,7 @@ func TestClassify(t *testing.T) {
 			mine:                                 {"hacker1db", Personal, ByType},
 			"~" + strings.TrimPrefix(dots, home): {"hacker1db", Personal, ByType},
 			team:                                 {"example-org", Org, ByType},
-			adoOrg:                               {"my-work-org", Org, ByDefault}, // Azure DevOps: never looked up on GitHub
+			adoOrg:                               {"my-work-org", Org, ByDefault},
 			scratch:                              {"", Org, ByDefault},
 		} {
 			if got := c.Classify(dir, ""); got != want {
@@ -258,17 +255,17 @@ labels:
 		client := filepath.Join(scratch, "client", "x")
 		for dir, want := range map[string]Result{
 			mine:    {"hacker1db", "personal", ByOwner},
-			tool:    {"hacker1db", "work", ByRepo}, // repos beats owners
+			tool:    {"hacker1db", "work", ByRepo},
 			shared:  {"Example-Corp-Shared", "shared", ByOwner},
 			team:    {"example-org", "work", ByDefault},
 			scratch: {"", "personal", ByPath},
-			client:  {"", "work", ByPath}, // the longer path wins
+			client:  {"", "work", ByPath},
 		} {
 			if got := c.Classify(dir, ""); got != want {
 				t.Errorf("Classify(%s) = %+v, want %+v", dir, got, want)
 			}
 		}
-		// A tool-reported repository wins over the directory's remote.
+
 		if got := c.Classify(team, "hacker1db/skills"); got.Label != "personal" {
 			t.Errorf("reported repo ignored: %+v", got)
 		}

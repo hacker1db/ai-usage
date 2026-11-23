@@ -10,11 +10,6 @@ import (
 	"time"
 )
 
-// Tool logs are written by other programs and occasionally change shape. These lenient types
-// decode the expected JSON type and quietly become zero for anything else, so one odd field
-// never discards the rest of a record (strict decoding would fail the whole line).
-
-// Str is a string field that ignores non-string JSON values.
 type Str string
 
 func (s *Str) UnmarshalJSON(b []byte) error {
@@ -25,7 +20,6 @@ func (s *Str) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Int is an integer field that accepts any JSON number (fractions truncate) and ignores the rest.
 type Int int64
 
 func (n *Int) UnmarshalJSON(b []byte) error {
@@ -41,7 +35,6 @@ func (n *Int) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Float is a float field that ignores non-numeric JSON values.
 type Float float64
 
 func (f *Float) UnmarshalJSON(b []byte) error {
@@ -52,7 +45,6 @@ func (f *Float) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Bool is a boolean field that ignores non-boolean JSON values.
 type Bool bool
 
 func (x *Bool) UnmarshalJSON(b []byte) error {
@@ -63,7 +55,6 @@ func (x *Bool) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Stamp is a timestamp given as an ISO-8601 string or as epoch seconds.
 type Stamp struct{ time.Time }
 
 func (s *Stamp) UnmarshalJSON(b []byte) error {
@@ -92,8 +83,6 @@ var naiveLayouts = []string{
 	"2006-01-02T15:04",
 }
 
-// ParseTime parses ISO-8601 (offset optional; naive values are UTC) or epoch seconds as text.
-// It returns the zero time when the value can't be parsed.
 func ParseTime(s string) time.Time {
 	if s == "" {
 		return time.Time{}
@@ -114,8 +103,6 @@ func ParseTime(s string) time.Time {
 	return time.Time{}
 }
 
-// EachJSONLine calls fn with every non-blank line of a JSON Lines file that holds a JSON object.
-// Lines may be arbitrarily long. A missing file is an error; malformed lines are skipped.
 func EachJSONLine(path string, fn func(line []byte)) error {
 	f, err := os.Open(path)
 	if err != nil {

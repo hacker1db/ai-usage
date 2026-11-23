@@ -1,14 +1,7 @@
-// Package proxylog is the contract between the proxies (foundry-entra-proxy and ai-gateway), which
-// write one JSON "request" line per proxied call, and the ai-usage collector, which reads those
-// lines back. Both sides use
-// these keys, so a rename on one side breaks the build or the round-trip test instead of silently
-// dropping usage.
 package proxylog
 
-// Message is the slog message of a per-request line.
 const Message = "request"
 
-// Attribute keys written by the proxy (slog adds "time", "level", and "msg").
 const (
 	KeyModel           = "model"
 	KeyClient          = "client"
@@ -18,14 +11,11 @@ const (
 	KeyReasoningTokens = "reasoning_tokens"
 	KeyTotalTokens     = "total_tokens"
 
-	// Written by ai-gateway only.
 	KeyCacheWriteTokens = "cache_write_tokens" //nolint:gosec // G101: a log attribute name, not a credential.
 	KeyProvider         = "provider"
 	KeyUpstreamModel    = "upstream_model"
 )
 
-// Request is the subset of a request line the collector reads. Token fields are absent when the
-// response carried no usage, which decodes as zero.
 type Request struct {
 	Time            string `json:"time"`
 	Msg             string `json:"msg"`

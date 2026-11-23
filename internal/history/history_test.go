@@ -8,7 +8,6 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// A file in the layout the Python dashboard wrote must load unchanged.
 const pythonStore = `{"columns":["hour","tool","profile","model","requests","input","cached","cache_write","output","reasoning","total","sessions","copilot_aiu"],
 "rows":[["2026-11-07T09:00","claude-code","personal","claude-opus",5,1000,800,50,40,0,1040,1,0.0]],
 "sessions":[{"tool":"claude-code","profile":"personal","id":"s1","title":null,"title_src":null,"project":"x","path":null,"repo":null,
@@ -33,7 +32,6 @@ func TestLoadsPythonStoreAndKeepsLargerRows(t *testing.T) {
 		t.Fatalf("session = %+v", x)
 	}
 
-	// A live row with fewer requests means transcripts were deleted: keep the stored row.
 	smaller := rows[0]
 	smaller.Requests = 2
 	held, err := s.Merge([]HourRow{smaller}, nil)
@@ -43,7 +41,7 @@ func TestLoadsPythonStoreAndKeepsLargerRows(t *testing.T) {
 	if _, ok := held[smaller.Key()]; !ok || s.Since("2026-11-01T00:00")[0].Requests != 5 {
 		t.Fatal("smaller live row replaced the stored one")
 	}
-	// A larger one replaces it and is written back in the same layout.
+
 	larger := rows[0]
 	larger.Requests = 9
 	if _, err := s.Merge([]HourRow{larger}, nil); err != nil {
@@ -66,7 +64,6 @@ func TestReadOnlyNeverWrites(t *testing.T) {
 	}
 }
 
-// A store in the layout before cache_write_1h loads, and the next save upgrades it in place.
 func TestUpgradesLegacyLayoutWithoutLosingRows(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "hourly.json")
 	if err := os.WriteFile(path, []byte(pythonStore), 0o600); err != nil {

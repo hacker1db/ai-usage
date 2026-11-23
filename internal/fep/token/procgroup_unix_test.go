@@ -14,8 +14,6 @@ import (
 	"time"
 )
 
-// TestExecRunnerKillsWrapperChildren mimics the Homebrew az wrapper: a shell script that runs a
-// long-lived child without exec, so the child inherits and holds stdout and stderr.
 func TestExecRunnerKillsWrapperChildren(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
@@ -33,7 +31,6 @@ func TestExecRunnerKillsWrapperChildren(t *testing.T) {
 		done <- err
 	}()
 
-	// Cancel only once the child exists, so a slow machine cannot kill the shell before it forks.
 	var raw []byte
 	for wait := time.Now().Add(10 * time.Second); ; {
 		var err error
@@ -54,7 +51,7 @@ func TestExecRunnerKillsWrapperChildren(t *testing.T) {
 			t.Fatal("expected an error after cancellation")
 		}
 	case <-time.After(2 * time.Second):
-		// Well under execWaitDelay: the group kill, not the WaitDelay backstop, must release Run.
+
 		t.Fatalf("ExecRunner still running %v after cancel; child kept the pipes open", time.Since(start))
 	}
 

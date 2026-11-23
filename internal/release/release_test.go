@@ -63,13 +63,13 @@ func TestNext(t *testing.T) {
 	}{
 		{"v0.2.0", []string{"fix: a"}, None, "v0.2.1", true},
 		{"v0.2.0", []string{"fix: a", "feat: b"}, None, "v0.3.0", true},
-		{"v0.2.3", []string{"feat!: b"}, None, "v0.3.0", true}, // pre-1.0: breaking bumps minor
+		{"v0.2.3", []string{"feat!: b"}, None, "v0.3.0", true},
 		{"v1.2.3", []string{"feat!: b", "fix: c"}, None, "v2.0.0", true},
 		{"v1.2.3", []string{"feat: b"}, None, "v1.3.0", true},
 		{"v0.2.0", []string{"docs: a", "ci: b"}, None, "v0.2.0", false},
 		{"v0.2.0", nil, None, "v0.2.0", false},
 		{"v0.2.0", []string{"docs: a"}, Patch, "v0.2.1", true},
-		{"v0.2.0", []string{"feat: a"}, Patch, "v0.2.1", true}, // force wins over computed
+		{"v0.2.0", []string{"feat: a"}, Patch, "v0.2.1", true},
 		{"v0.9.1", nil, Major, "v0.10.0", true},
 	}
 	for _, c := range cases {

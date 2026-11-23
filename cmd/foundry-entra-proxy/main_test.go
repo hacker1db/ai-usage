@@ -35,7 +35,7 @@ func TestShutdownTimeoutWithStreamInFlightIsNotAnError(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		w.(http.Flusher).Flush()
 		close(started)
-		<-r.Context().Done() // a long stream that only ends when the connection is dropped
+		<-r.Context().Done()
 	})}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

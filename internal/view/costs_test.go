@@ -24,7 +24,7 @@ func TestMoney(t *testing.T) {
 }
 
 func TestBuildCosts(t *testing.T) {
-	now := time.Date(2026, 11, 11, 0, 0, 0, 0, time.UTC) // 10 days into a 30-day month
+	now := time.Date(2026, 11, 11, 0, 0, 0, 0, time.UTC)
 	az := &billing.Report{Retrieved: now, Basis: "b", Items: []billing.Item{
 		{Date: "2026-11-01", Resource: "/x/accounts/foundry", Currency: "USD", Net: json.Number("6")},
 		{Date: "2026-11-03", Resource: "/x/accounts/foundry", Currency: "USD", Net: json.Number("4")},
@@ -56,14 +56,13 @@ func TestBuildCosts(t *testing.T) {
 	if r := d.Costs.Rows[0]; r.Level != Warning || !strings.Contains(r.Status, "next try") {
 		t.Fatalf("a rate limit before any data should be a wait, got %s %q", r.Level, r.Status)
 	}
-	// A rate-limited refresh with data already shown is not an issue: the card stays good.
+
 	d.buildCosts(&snapshot.Snapshot{Costs: []billing.Status{{Provider: "azure", Month: "2026-11", Report: az, Error: "rate limited",
 		Retrying: true, Next: now.Add(time.Hour)}}}, now)
 	if r := d.Costs.Rows[0]; r.Level != Good || strings.Contains(r.Status, "rate") || !strings.Contains(r.Status, "next update") {
 		t.Fatalf("rate-limited refresh should look normal, got %s %q", r.Level, r.Status)
 	}
-	// An org-billed Copilot seat: the personal endpoint reports nothing, so the card shows the
-	// locally logged AI credits instead of a misleading zero.
+
 	empty := &billing.Report{Retrieved: now}
 	org := &snapshot.Snapshot{
 		Costs: []billing.Status{{ID: "cp", Provider: "copilot", Month: "2026-11", Report: empty}},

@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// Compact formats like Intl's compact notation: 950, 1.2K, 34.5M, 2.1B.
 func Compact(v float64) string {
 	a := math.Abs(v)
 	if a < 1000 {
@@ -21,7 +20,7 @@ func Compact(v float64) string {
 	for i, u := range units {
 		if a >= u.div {
 			x := math.Round(v/u.div*10) / 10
-			if math.Abs(x) >= 1000 && i > 0 { // 999.96K rounds to 1000K: promote
+			if math.Abs(x) >= 1000 && i > 0 {
 				u = units[i-1] //nolint:gosec // G602: guarded by i > 0.
 				x = math.Round(v/u.div*10) / 10
 			}
@@ -32,7 +31,6 @@ func Compact(v float64) string {
 	return Exact(v)
 }
 
-// Exact formats a rounded integer with thousands separators.
 func Exact(v float64) string {
 	n := int64(math.Round(v))
 	s := strconv.FormatInt(n, 10)
@@ -53,7 +51,6 @@ func Exact(v float64) string {
 	return b.String()
 }
 
-// Duration formats minutes as 45m or 2.5h.
 func Duration(minutes float64) string {
 	if minutes >= 60 {
 		return fmt.Sprintf("%.1fh", minutes/60)
@@ -61,7 +58,6 @@ func Duration(minutes float64) string {
 	return fmt.Sprintf("%dm", int(math.Round(minutes)))
 }
 
-// Pct formats a share 0-1 as 42%, <1%, or —.
 func Pct(share float64) string {
 	switch {
 	case math.IsNaN(share) || math.IsInf(share, 0):
@@ -72,14 +68,12 @@ func Pct(share float64) string {
 	return fmt.Sprintf("%.0f%%", share*100)
 }
 
-// Date and time formats used by both renderers.
 func DayLabel(t time.Time) string  { return t.Format("Mon Jan 2") }
 func ShortDay(t time.Time) string  { return t.Format("Jan 2") }
 func HourLabel(t time.Time) string { return t.Format("3pm") }
 func HourFull(t time.Time) string  { return t.Format("Mon Jan 2, 3pm") }
 func WhenLabel(t time.Time) string { return t.Format("Jan 2, 3:04pm") }
 
-// NiceMax rounds v up to a clean axis maximum.
 func NiceMax(v float64) float64 {
 	if v <= 0 {
 		return 1
@@ -93,7 +87,6 @@ func NiceMax(v float64) float64 {
 	return 10 * p
 }
 
-// Ticks returns n+1 evenly spaced axis values from 0 to top.
 func Ticks(top float64, n int) []float64 {
 	out := make([]float64, n+1)
 	for i := range out {

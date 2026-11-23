@@ -1,5 +1,3 @@
-// Package workreport reads the optional ai-work-report skill output (classified.json,
-// narrative.json, ai-work-report.html) from its workdir.
 package workreport
 
 import (
@@ -14,36 +12,30 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// ReportName is the skill's HTML report file.
 const ReportName = "ai-work-report.html"
 
-// Theme is one workstream.
 type Theme struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	D    string `json:"d,omitempty"` // short description
+	D    string `json:"d,omitempty"`
 }
 
-// Classified is the skill's classification of one session.
 type Classified struct {
 	Theme        string      `json:"theme"`
 	ManualLikely usage.Float `json:"manual_likely"`
 	Basis        string      `json:"basis"`
 }
 
-// Classification maps session ids (full ids or 8-character prefixes) to themes.
 type Classification struct {
 	Themes   []Theme               `json:"themes"`
 	Sessions map[string]Classified `json:"sessions"`
 }
 
-// Narrative is the skill's headline text; values may contain {placeholders} and markup.
 type Narrative struct {
 	TitleHTML  string `json:"title_html"`
 	ThesisHTML string `json:"thesis_html"`
 }
 
-// Report is everything found in the workdir.
 type Report struct {
 	Dir             string          `json:"dir"`
 	Classified      *Classification `json:"classified,omitempty"`
@@ -53,7 +45,6 @@ type Report struct {
 	Error           string          `json:"error,omitempty"`
 }
 
-// Load returns nil when the folder holds nothing usable.
 func Load(dir string) *Report {
 	if st, err := os.Stat(dir); dir == "" || err != nil || !st.IsDir() {
 		return nil
@@ -105,7 +96,6 @@ func mtime(path string) string {
 	return st.ModTime().Format(time.RFC3339)
 }
 
-// Lookup finds a session's classification by full id or by a stored prefix of 6+ characters.
 func (c *Classification) Lookup(id string) (Classified, bool) {
 	if c == nil {
 		return Classified{}, false
@@ -121,7 +111,6 @@ func (c *Classification) Lookup(id string) (Classified, bool) {
 	return Classified{}, false
 }
 
-// ThemeName returns a theme's display name.
 func (c *Classification) ThemeName(id string) string {
 	for _, t := range c.Themes {
 		if t.ID == id {

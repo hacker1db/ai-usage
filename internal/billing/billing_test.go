@@ -10,7 +10,7 @@ import (
 func TestCopilotNetAndScope(t *testing.T) {
 	run := func(_ context.Context, name string, args ...string) ([]byte, error) {
 		if isIdentity(args) {
-			return ghUser("someone", "read:org"), nil // org billing doesn't need the user scope
+			return ghUser("someone", "read:org"), nil
 		}
 		if name != "gh" || !strings.Contains(strings.Join(args, " "), "/organizations/example/settings/billing/ai_credit/usage?year=2026&month=11") {
 			t.Fatalf("wrong request: %s %v", name, args)

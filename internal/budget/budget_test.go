@@ -10,17 +10,17 @@ import (
 
 func TestBounds(t *testing.T) {
 	loc := time.Local
-	now := time.Date(2026, 11, 7, 15, 0, 0, 0, loc) // a Saturday
+	now := time.Date(2026, 11, 7, 15, 0, 0, 0, loc)
 	cases := []struct {
 		p              Period
 		day, weekday   int
 		start, endDate string
 	}{
 		{Day, 1, 0, "2026-11-07", "2026-11-08"},
-		{Week, 1, 0, "2026-11-02", "2026-11-09"}, // resets Monday
-		{Week, 1, 5, "2026-11-07", "2026-11-14"}, // resets Saturday (today)
+		{Week, 1, 0, "2026-11-02", "2026-11-09"},
+		{Week, 1, 5, "2026-11-07", "2026-11-14"},
 		{Month, 1, 0, "2026-11-01", "2026-12-01"},
-		{Month, 15, 0, "2026-10-15", "2026-11-15"}, // reset day not reached yet
+		{Month, 15, 0, "2026-10-15", "2026-11-15"},
 	}
 	for _, c := range cases {
 		s, e := Bounds(now, c.p, c.day, c.weekday)
