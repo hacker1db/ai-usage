@@ -39,12 +39,12 @@ func runM365Sync(args []string) error {
 
 	azPath, err := exec.LookPath(*az)
 	if err != nil {
-		return fmt.Errorf("azure cli not found (%v); install it and run `az login`", err)
+		return fmt.Errorf("azure cli not found (%w); install it and run `az login`", err)
 	}
 	if *upn == "" {
 		out, err := exec.CommandContext(ctx, azPath, "account", "show", "--query", "user.name", "-o", "tsv").Output()
 		if err != nil {
-			return fmt.Errorf("az account show: %v; run `az login` or pass -upn", err)
+			return fmt.Errorf("az account show: %w; run `az login` or pass -upn", err)
 		}
 		*upn = strings.TrimSpace(string(out))
 		if *upn == "" {

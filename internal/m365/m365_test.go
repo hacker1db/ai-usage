@@ -41,7 +41,7 @@ func fakeGraph(t *testing.T) (*httptest.Server, *atomic.Int32) {
 		date := strings.TrimSuffix(p[i+len("(date="):], ")")
 		if date < "2026-11-13" || date > "2026-11-20" {
 			w.WriteHeader(400)
-			w.Write([]byte(`{"error":{"code":"BadRequest","message":"date out of range"}}`))
+			_, _ = w.Write([]byte(`{"error":{"code":"BadRequest","message":"date out of range"}}`))
 			return
 		}
 		me := Day{RefreshDate: "2026-11-20", Date: date, UPN: "Me@Contoso.com", Actions: 3, Word: true, Teams: true}
@@ -53,7 +53,7 @@ func fakeGraph(t *testing.T) (*httptest.Server, *atomic.Int32) {
 		} else {
 			page["value"] = []Day{me}
 		}
-		json.NewEncoder(w).Encode(page)
+		_ = json.NewEncoder(w).Encode(page)
 	}))
 	t.Cleanup(srv.Close)
 	return srv, &throttled
@@ -82,7 +82,7 @@ func TestSyncFiltersUserPagesAndRetries(t *testing.T) {
 func TestSyncNoRowsForUser(t *testing.T) {
 	srv, _ := fakeGraph(t)
 	c := &Client{Base: srv.URL, Tokens: fixedToken("tok"), Sleep: func(time.Duration) {}}
-	if _, err := c.Sync(context.Background(), "nobody@contoso.com", time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)); err != ErrNoRows {
+	if _, err := c.Sync(context.Background(), "nobody@contoso.com", time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)); !errors.Is(err, ErrNoRows) {
 		t.Fatalf("want ErrNoRows, got %v", err)
 	}
 }
@@ -90,7 +90,7 @@ func TestSyncNoRowsForUser(t *testing.T) {
 func TestForbiddenHint(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(403)
-		w.Write([]byte(`{"error":{"code":"Forbidden","message":"nope"}}`))
+		_, _ = w.Write([]byte(`{"error":{"code":"Forbidden","message":"nope"}}`))
 	}))
 	defer srv.Close()
 	c := &Client{Base: srv.URL, Tokens: fixedToken("tok")}
@@ -102,7 +102,7 @@ func TestForbiddenHint(t *testing.T) {
 
 func TestNextLinkOffHostRefused(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"value":[],"@odata.nextLink":"https://evil.example/x"}`))
+		_, _ = w.Write([]byte(`{"value":[],"@odata.nextLink":"https://evil.example/x"}`))
 	}))
 	defer srv.Close()
 	c := &Client{Base: srv.URL, Tokens: fixedToken("tok")}
@@ -151,10 +151,10 @@ func TestSyncReturnsAuthErrorWithoutProbing(t *testing.T) {
 func TestSyncSkipsEmptyProbeDates(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "2026-11-21") { // in window but no rows yet
-			w.Write([]byte(`{"value":[]}`))
+			_, _ = w.Write([]byte(`{"value":[]}`))
 			return
 		}
-		w.Write([]byte(`{"value":[{"reportRefreshDate":"2026-11-20","reportSelectedDate":"2026-11-20","userPrincipalName":"me@x","allAppsCopilotActionCount":1}]}`))
+		_, _ = w.Write([]byte(`{"value":[{"reportRefreshDate":"2026-11-20","reportSelectedDate":"2026-11-20","userPrincipalName":"me@x","allAppsCopilotActionCount":1}]}`))
 	}))
 	defer srv.Close()
 	c := &Client{Base: srv.URL, Tokens: fixedToken("tok")}
