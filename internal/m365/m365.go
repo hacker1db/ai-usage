@@ -141,7 +141,7 @@ func (c *Client) get(ctx context.Context, url string, v any) error {
 			return err
 		}
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			return err
 		}
