@@ -17,17 +17,10 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// AntigravityProfile is the profile label for Google Antigravity rows.
 const AntigravityProfile = "google"
 
-// antigravityConvDir holds one SQLite database per conversation under the Antigravity home.
 const antigravityConvDir = "conversations"
 
-// CollectAntigravity reads Google Antigravity CLI conversations (~/.gemini/antigravity-cli). Each
-// conversation is a SQLite database whose steps carry protobuf metadata; a model-response step
-// holds a usage message with the model enum and token counts. Model names come from the same
-// database's gen_metadata rows, titles and workspaces from conversation_summaries.db, and prompts
-// from history.jsonl. Everything is opened read-only through the sqlite3 CLI.
 func CollectAntigravity(agg *usage.Aggregator, home string) Status {
 	home = usage.ExpandHome(home)
 	st := Status{Source: usage.ToolAntigravity, Path: usage.Tilde(home)}
@@ -73,8 +66,6 @@ func CollectAntigravity(agg *usage.Aggregator, home string) Status {
 	return st
 }
 
-// newest returns the later modification time of a database and its write-ahead log, since a
-// running Antigravity appends to the -wal file without touching the database file.
 func newest(db string) time.Time {
 	var t time.Time
 	for _, p := range []string{db, db + "-wal"} {
@@ -85,29 +76,21 @@ func newest(db string) time.Time {
 	return t
 }
 
-// queryAntigravity runs one read-only query against a conversation database. It first opens the
-// database with mode=ro, which sees uncommitted WAL frames while Antigravity is running. A
-// read-only connection cannot create a missing -shm file, so when that open fails it retries with
-// immutable=1, which reads the main file as is; that is complete once the WAL is checkpointed.
 func queryAntigravity[T any](ctx context.Context, db, sql string) ([]T, error) {
 	rows, err := queryJSON[T](ctx, sqliteURI(db, "mode=ro"), sql)
 	if err == nil {
 		return rows, nil
 	}
 	if fi, werr := os.Stat(db + "-wal"); werr == nil && fi.Size() > 0 {
-		return nil, err // a WAL with content: immutable would silently drop recent steps
+		return nil, err
 	}
 	return queryJSON[T](ctx, sqliteURI(db, "immutable=1"), sql)
 }
 
-// sqliteURI returns a file: URI for path with the given query, escaping characters that SQLite
-// would otherwise read as URI syntax.
 func sqliteURI(path, query string) string {
 	return (&url.URL{Scheme: "file", Path: path, RawQuery: query}).String()
 }
 
-// readAntigravityConversation returns one record per model response in a conversation database.
-// Session is left for the caller to fill.
 func readAntigravityConversation(ctx context.Context, db string) ([]usage.Record, error) {
 	type hexRow struct {
 		Data usage.Str `json:"d"`
@@ -116,7 +99,7 @@ func readAntigravityConversation(ctx context.Context, db string) ([]usage.Record
 	if err != nil {
 		return nil, err
 	}
-	// gen_metadata is optional: without it models are named by their enum.
+
 	names := map[uint64]string{}
 	if gens, err := queryAntigravity[hexRow](ctx, db, "SELECT hex(data) AS d FROM gen_metadata ORDER BY idx"); err == nil {
 		for _, g := range gens {
@@ -146,25 +129,22 @@ func readAntigravityConversation(ctx context.Context, db string) ([]usage.Record
 	return out, nil
 }
 
-// Antigravity step metadata (protobuf) fields this reader uses.
 const (
-	agStepCreated = 1 // google.protobuf.Timestamp
-	agStepUsage   = 9 // model usage stats
+	agStepCreated = 1
+	agStepUsage   = 9
 
-	agUsageModel      = 1 // model enum
-	agUsageInput      = 2 // fresh input tokens (excludes cache reads and writes)
-	agUsageOutput     = 3 // output tokens, thinking included
+	agUsageModel      = 1
+	agUsageInput      = 2
+	agUsageOutput     = 3
 	agUsageCacheWrite = 4
 	agUsageCacheRead  = 5
 	agUsageThinking   = 9
 
-	agGenInfo      = 1  // generation info message
-	agGenInfoModel = 3  // model enum
-	agGenInfoName  = 19 // model id, e.g. "gemini-4-neon"
+	agGenInfo      = 1
+	agGenInfoModel = 3
+	agGenInfoName  = 19
 )
 
-// antigravityStepUsage decodes a step's metadata into a record. ok is false for steps without
-// usage or with no tokens (a failed request).
 func antigravityStepUsage(b []byte) (r usage.Record, enum uint64, ok bool) {
 	var created, stats []byte
 	err := pbEach(b, func(f int, v uint64, sub []byte) {
@@ -214,7 +194,6 @@ func antigravityStepUsage(b []byte) (r usage.Record, enum uint64, ok bool) {
 	return r, enum, true
 }
 
-// antigravityModelName returns the model enum and id from one gen_metadata row.
 func antigravityModelName(b []byte) (enum uint64, name string) {
 	_ = pbEach(b, func(f int, _ uint64, sub []byte) {
 		if f != agGenInfo || sub == nil {
@@ -234,8 +213,6 @@ func antigravityModelName(b []byte) (enum uint64, name string) {
 
 var errPB = errors.New("malformed protobuf")
 
-// pbEach walks one protobuf message's top-level fields. fn gets the varint value for wire type 0
-// and the payload for wire type 2 (nil otherwise); fixed-width fields are skipped.
 func pbEach(b []byte, fn func(field int, v uint64, sub []byte)) error {
 	for len(b) > 0 {
 		key, n := pbVarint(b)
@@ -280,7 +257,6 @@ func pbEach(b []byte, fn func(field int, v uint64, sub []byte)) error {
 	return nil
 }
 
-// pbVarint decodes a base-128 varint, returning its length (0 when truncated or too long).
 func pbVarint(b []byte) (uint64, int) {
 	var v uint64
 	for i := 0; i < len(b) && i < 10; i++ {
@@ -292,7 +268,6 @@ func pbVarint(b []byte) (uint64, int) {
 	return 0, 0
 }
 
-// noteAntigravitySessions adds titles, workspaces, and prompts for the sessions that had usage.
 func noteAntigravitySessions(ctx context.Context, agg *usage.Aggregator, home string, ids map[string]bool) {
 	meta := map[string]*usage.Meta{}
 	metaOf := func(id string) *usage.Meta {

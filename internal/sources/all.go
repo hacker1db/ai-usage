@@ -13,7 +13,7 @@ type Options struct {
 	CodexHome  string
 	CodexExtra []string
 	CopilotDB  string
-	// AntigravityHome is the Antigravity CLI data dir (conversations/*.db).
+
 	AntigravityHome string
 	ProxyLog        string
 	GatewayLog      string

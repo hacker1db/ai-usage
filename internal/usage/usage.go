@@ -1,5 +1,3 @@
-// Package usage aggregates token usage from AI tool logs into rows keyed by
-// (bucket, tool, profile, model) and per-session summaries.
 package usage
 
 import (
@@ -9,33 +7,25 @@ import (
 	"time"
 )
 
-// SlotMinutes is the activity granularity: active time counts distinct 5-minute slots with
-// activity, so idle gaps inside a long session don't count.
 const SlotMinutes = 5
 
-// Caps on per-session detail, matching what the dashboard shows.
 const (
 	MaxPrompts  = 8
 	MaxCommands = 10
 	MaxRefs     = 10
 )
 
-// Tool names as they appear in rows.
 const (
 	ToolClaude      = "claude-code"
 	ToolCodex       = "codex"
 	ToolCopilot     = "copilot"
 	ToolAntigravity = "antigravity"
-	ToolProxy       = "foundry-proxy" // cross-check only; overlaps Codex work-foundry
+	ToolProxy       = "foundry-proxy"
 	ToolGateway     = "ai-gateway"
 )
 
-// Slot returns the activity slot of t.
 func Slot(t time.Time) int64 { return t.Unix() / (SlotMinutes * 60) }
 
-// Metrics are the token counters of a row. Input includes cached and cache-write tokens for every
-// tool, so Total = Input + Output. Reasoning is a subset of Output, and CacheWrite1h (Claude's
-// 1-hour cache TTL, priced higher than the 5-minute default) is a subset of CacheWrite.
 type Metrics struct {
 	Requests     int64 `json:"requests"`
 	Input        int64 `json:"input"`
@@ -47,7 +37,6 @@ type Metrics struct {
 	CacheWrite1h int64 `json:"cache_write_1h"`
 }
 
-// Add accumulates o into m.
 func (m *Metrics) Add(o Metrics) {
 	m.Requests += o.Requests
 	m.Input += o.Input
@@ -59,25 +48,22 @@ func (m *Metrics) Add(o Metrics) {
 	m.CacheWrite1h += o.CacheWrite1h
 }
 
-// Uncached is input that wasn't a cache read, plus output.
 func (m Metrics) Uncached() int64 { return max(m.Input-m.Cached, 0) + m.Output }
 
-// Record is one model response's usage as read from a tool log.
 type Record struct {
 	Model      string
 	Time       time.Time
-	Session    string // "" when the source has no sessions (proxy log)
-	Input      int64  // includes cached and cache-write tokens
+	Session    string
+	Input      int64
 	Cached     int64
 	CacheWrite int64
-	// CacheWrite1h is the part of CacheWrite written with a 1-hour TTL.
+
 	CacheWrite1h int64
 	Output       int64
 	Reasoning    int64
 	CopilotAIU   float64
 }
 
-// Granularity is the row bucket size.
 type Granularity int
 
 const (
@@ -85,7 +71,6 @@ const (
 	Hourly
 )
 
-// Key identifies an aggregated row. Bucket is a local date (2006-01-02) or hour (2006-01-02T15:00).
 type Key struct {
 	Bucket  string
 	Tool    string
@@ -93,7 +78,6 @@ type Key struct {
 	Model   string
 }
 
-// Row is an aggregated usage row.
 type Row struct {
 	Key
 	Metrics
@@ -107,18 +91,14 @@ type rowAcc struct {
 	aiu      float64
 }
 
-// SessionKey identifies a session across tools and profiles.
 type SessionKey struct {
 	Tool    string
 	Profile string
 	ID      string
 }
 
-// String is the "tool|profile|id" form used by the history store and URLs.
 func (k SessionKey) String() string { return k.Tool + "|" + k.Profile + "|" + k.ID }
 
-// Meta is session metadata merged from tool logs. For scalar fields the first non-empty value
-// wins; lists keep the first unique values up to their caps; counters add up.
 type Meta struct {
 	Title, TitleSrc, Prompt, Cwd, Repo, Branch string
 	Slots                                      map[int64]struct{}
@@ -135,7 +115,6 @@ type session struct {
 	byModel                           map[string]*Metrics
 }
 
-// Aggregator collects records newer than Cutoff into rows and sessions.
 type Aggregator struct {
 	Cutoff   time.Time
 	Bucket   Granularity
@@ -143,7 +122,6 @@ type Aggregator struct {
 	sessions map[SessionKey]*session
 }
 
-// NewAggregator returns an empty aggregator.
 func NewAggregator(cutoff time.Time, bucket Granularity) *Aggregator {
 	return &Aggregator{Cutoff: cutoff, Bucket: bucket, rows: map[Key]*rowAcc{}, sessions: map[SessionKey]*session{}}
 }
@@ -157,13 +135,11 @@ func (a *Aggregator) session(k SessionKey) *session {
 	return s
 }
 
-// HasSession reports whether a session has usage in the window.
 func (a *Aggregator) HasSession(k SessionKey) bool {
 	_, ok := a.sessions[k]
 	return ok
 }
 
-// Add records one response; it reports false when the record is outside the window.
 func (a *Aggregator) Add(tool, profile string, r Record) bool {
 	if r.Time.IsZero() || r.Time.Before(a.Cutoff) {
 		return false
@@ -213,7 +189,6 @@ func (a *Aggregator) Add(tool, profile string, r Record) bool {
 	return true
 }
 
-// SessionModels returns a session's metrics per model, or nil when it has no usage in the window.
 func (a *Aggregator) SessionModels(k SessionKey) map[string]Metrics {
 	s := a.sessions[k]
 	if s == nil || s.requests == 0 {
@@ -226,7 +201,6 @@ func (a *Aggregator) SessionModels(k SessionKey) map[string]Metrics {
 	return out
 }
 
-// Note merges metadata into a session (creating it if needed).
 func (a *Aggregator) Note(k SessionKey, m Meta) {
 	if k.ID == "" {
 		return
@@ -270,7 +244,6 @@ outer:
 	return dst
 }
 
-// Rows returns the aggregated rows sorted by key.
 func (a *Aggregator) Rows() []Row {
 	out := make([]Row, 0, len(a.rows))
 	for k, acc := range a.rows {
@@ -280,7 +253,6 @@ func (a *Aggregator) Rows() []Row {
 	return out
 }
 
-// Less orders keys by bucket, tool, profile, model.
 func (k Key) Less(o Key) bool {
 	if k.Bucket != o.Bucket {
 		return k.Bucket < o.Bucket
@@ -294,7 +266,6 @@ func (k Key) Less(o Key) bool {
 	return k.Model < o.Model
 }
 
-// SessionSet returns the distinct sessions behind a group of rows, for rollups.
 func (a *Aggregator) SessionSet(match func(Key) bool) map[SessionKey]struct{} {
 	out := map[SessionKey]struct{}{}
 	for k, acc := range a.rows {
@@ -307,7 +278,6 @@ func (a *Aggregator) SessionSet(match func(Key) bool) map[SessionKey]struct{} {
 	return out
 }
 
-// Count is a (name, n) pair, encoded as a two-element JSON array like Python's Counter.most_common.
 type Count struct {
 	Name string
 	N    int
@@ -329,8 +299,6 @@ func (c *Count) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Detail is what happened in a session: prompts, files changed, commands, tools, refs, models.
-// Every string was redacted when it was read.
 type Detail struct {
 	Prompts    []string `json:"prompts"`
 	Files      []Count  `json:"files"`
@@ -341,8 +309,6 @@ type Detail struct {
 	Models     []Count  `json:"models"`
 }
 
-// SessionRow is a flat per-session summary. The JSON layout matches the history store written by
-// the earlier Python dashboard, so existing data/hourly.json files keep working.
 type SessionRow struct {
 	Tool      string  `json:"tool"`
 	Profile   string  `json:"profile"`
@@ -361,18 +327,15 @@ type SessionRow struct {
 	Uncached  int64   `json:"uncached"`
 	Output    int64   `json:"output"`
 	Model     string  `json:"model"`
-	Owner     string  `json:"owner,omitempty"` // repository owner, set by the ownership classifier
-	Class     string  `json:"class,omitempty"` // ownership label (personal, work, ...), not stored in history
+	Owner     string  `json:"owner,omitempty"`
+	Class     string  `json:"class,omitempty"`
 	Detail    *Detail `json:"detail,omitempty"`
 }
 
-// Key returns the session's key.
 func (s SessionRow) Key() SessionKey { return SessionKey{s.Tool, s.Profile, s.ID} }
 
-// LastTime parses Last.
 func (s SessionRow) LastTime() time.Time { return ParseTime(s.Last) }
 
-// SessionRows returns sessions with usage in the window, newest activity first.
 func (a *Aggregator) SessionRows(withDetail bool) []SessionRow {
 	out := make([]SessionRow, 0, len(a.sessions))
 	for k, s := range a.sessions {
@@ -423,14 +386,11 @@ func nonNil(s []string) []string {
 	return s
 }
 
-// Counter counts names and remembers first-seen order for stable ties, like collections.Counter.
-// The zero value is ready to use.
 type Counter struct {
 	order []string
 	n     map[string]int
 }
 
-// Add adds n to name.
 func (c *Counter) Add(name string, n int) {
 	if c.n == nil {
 		c.n = map[string]int{}
@@ -441,7 +401,6 @@ func (c *Counter) Add(name string, n int) {
 	c.n[name] += n
 }
 
-// Merge adds every count of o.
 func (c *Counter) Merge(o *Counter) {
 	if o == nil {
 		return
@@ -451,10 +410,8 @@ func (c *Counter) Merge(o *Counter) {
 	}
 }
 
-// Len is the number of distinct names.
 func (c *Counter) Len() int { return len(c.order) }
 
-// MostCommon returns up to limit counts, largest first; ties keep first-seen order.
 func (c *Counter) MostCommon(limit int) []Count {
 	out := make([]Count, 0, len(c.order))
 	for _, k := range c.order {
