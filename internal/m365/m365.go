@@ -160,6 +160,14 @@ func (c *Client) get(ctx context.Context, url string, v any) error {
 	}
 }
 
+// GraphError is a non-success Graph response.
+type GraphError struct {
+	Status int
+	Msg    string
+}
+
+func (e *GraphError) Error() string { return fmt.Sprintf("graph %d: %s", e.Status, e.Msg) }
+
 func graphError(status int, body []byte) error {
 	var e struct {
 		Error struct{ Code, Message string } `json:"error"`
@@ -176,28 +184,33 @@ func graphError(status int, body []byte) error {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		hint = " (needs Reports.Read.All with admin consent, plus a reporting role such as Reports Reader for a signed-in user)"
 	}
-	return fmt.Errorf("graph %d: %s%s", status, msg, hint)
+	return &GraphError{Status: status, Msg: msg + hint}
 }
 
 // Sync fetches the report's newest window and returns upn's rows. The window is the latest
 // refresh date and the seven days before it; the refresh date is learned from the first call.
 func (c *Client) Sync(ctx context.Context, upn string, now time.Time) ([]Day, error) {
-	first, err := c.FetchDay(ctx, now.UTC().AddDate(0, 0, -3).Format("2006-01-02"))
-	if err != nil {
-		// A date outside the window is rejected; retry further back, where the data lags most.
-		if first, err = c.FetchDay(ctx, now.UTC().AddDate(0, 0, -5).Format("2006-01-02")); err != nil {
+	// Probe dates back from today until one is inside the window and has rows; a date outside the
+	// window is rejected with 400, and any other error (auth, throttling) is returned as is.
+	refresh := ""
+	for back := 2; back <= 10 && refresh == ""; back++ {
+		rows, err := c.FetchDay(ctx, now.UTC().AddDate(0, 0, -back).Format("2006-01-02"))
+		var ge *GraphError
+		if errors.As(err, &ge) && ge.Status == http.StatusBadRequest {
+			continue
+		}
+		if err != nil {
 			return nil, err
 		}
-	}
-	refresh := ""
-	for _, d := range first {
-		if d.RefreshDate > refresh {
-			refresh = d.RefreshDate
+		for _, d := range rows {
+			if d.RefreshDate > refresh {
+				refresh = d.RefreshDate
+			}
 		}
 	}
 	end, err := time.Parse("2006-01-02", refresh)
 	if err != nil {
-		return nil, fmt.Errorf("report has no reportRefreshDate: %w", ErrNoRows)
+		return nil, ErrNoRows
 	}
 	fetched := now.UTC().Format(time.RFC3339)
 	var out []Day
@@ -281,8 +294,19 @@ func (s Store) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
+	// CreateTemp makes a new owner-only file with a random name, so concurrent syncs never share a
+	// temporary file and a pre-existing one can't lend its permissions or a symlink.
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

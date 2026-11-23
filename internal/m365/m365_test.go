@@ -3,6 +3,7 @@ package m365
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -129,5 +130,36 @@ func TestStoreMergeKeepsHistory(t *testing.T) {
 	s.Merge("someone@else", []Day{{Date: "2026-11-03"}})
 	if len(s.Days) != 1 {
 		t.Fatalf("other user's store mixed in: %+v", s.Days)
+	}
+}
+
+func TestSyncReturnsAuthErrorWithoutProbing(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(403)
+	}))
+	defer srv.Close()
+	c := &Client{Base: srv.URL, Tokens: fixedToken("tok")}
+	_, err := c.Sync(context.Background(), "me@x", time.Now())
+	var ge *GraphError
+	if !errors.As(err, &ge) || ge.Status != 403 || calls.Load() != 1 {
+		t.Fatalf("err %v after %d calls", err, calls.Load())
+	}
+}
+
+func TestSyncSkipsEmptyProbeDates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "2026-11-21") { // in window but no rows yet
+			w.Write([]byte(`{"value":[]}`))
+			return
+		}
+		w.Write([]byte(`{"value":[{"reportRefreshDate":"2026-11-20","reportSelectedDate":"2026-11-20","userPrincipalName":"me@x","allAppsCopilotActionCount":1}]}`))
+	}))
+	defer srv.Close()
+	c := &Client{Base: srv.URL, Tokens: fixedToken("tok")}
+	days, err := c.Sync(context.Background(), "me@x", time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(days) == 0 {
+		t.Fatalf("days %v err %v", days, err)
 	}
 }
