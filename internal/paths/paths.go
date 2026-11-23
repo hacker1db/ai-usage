@@ -21,6 +21,15 @@ func DataDir() string {
 	return filepath.Join(usage.Home, ".local", "share", "ai-usage")
 }
 
+// M365Store is the Microsoft 365 Copilot usage store that `ai-usage m365-sync` writes:
+// $AI_USAGE_M365_STORE, else DataDir()/m365-copilot.json.
+func M365Store() string {
+	if f := os.Getenv("AI_USAGE_M365_STORE"); f != "" {
+		return usage.ExpandHome(f)
+	}
+	return filepath.Join(DataDir(), "m365-copilot.json")
+}
+
 // ConfigFile is the optional budgets file: $AI_USAGE_CONFIG, else ~/.config/ai-usage/dashboard.json.
 func ConfigFile() string {
 	if f := os.Getenv("AI_USAGE_CONFIG"); f != "" {

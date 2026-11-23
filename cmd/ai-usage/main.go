@@ -35,6 +35,8 @@ func main() {
 		err = runReport(args)
 	case "plan-cost":
 		err = runPlanCost(args)
+	case "m365-sync":
+		err = runM365Sync(args)
 	case "version", "-version", "--version":
 		fmt.Println(version)
 	case "help", "-h", "-help", "--help":
@@ -58,6 +60,7 @@ commands:
   report   write reports/<today>/{report.md,usage.json,usage.csv}
   cost     retrieve actual Azure or Copilot metered costs as JSON
   plan-cost  total tokens and estimated cost of linked sessions (-session tool|profile|id ...)
+  m365-sync  fetch your Microsoft 365 Copilot daily usage from Microsoft Graph (needs Reports.Read.All)
   version  print the version
 
 Run "ai-usage <command> -h" for a command's flags.
@@ -92,9 +95,10 @@ func sourceFlags(fs *flag.FlagSet) func() sources.Options {
 	antigravity := fs.String("antigravity-home", d.AntigravityHome, "Antigravity CLI data dir")
 	proxy := fs.String("proxy-log", d.ProxyLog, "foundry-entra-proxy log")
 	gw := fs.String("gateway-log", d.GatewayLog, "ai-gateway log")
+	m365 := fs.String("m365-store", d.M365Store, "Microsoft 365 Copilot store written by m365-sync")
 	return func() sources.Options {
 		o := sources.Options{CodexHome: *codex, CodexExtra: sources.DefaultCodexExtras(*codex), CopilotDB: *copilot,
-			AntigravityHome: *antigravity, ProxyLog: *proxy, GatewayLog: *gw}
+			AntigravityHome: *antigravity, ProxyLog: *proxy, GatewayLog: *gw, M365Store: *m365}
 		if len(claude) > 0 {
 			o.Claude = claude
 		}

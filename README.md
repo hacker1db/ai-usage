@@ -44,6 +44,7 @@ bin/ai-usage report -days 7 -print
 | Codex CLI | `personal-chatgpt` / `work-foundry` | `~/.codex/sessions`, `~/.codex/archived_sessions` | Profile comes from the session's `model_provider` |
 | GitHub Copilot CLI | `github-copilot` | `~/.copilot/session-store.db` | Read with `/usr/bin/sqlite3 -readonly`, so there's no driver dependency |
 | Google Antigravity CLI | `google` | `~/.gemini/antigravity-cli/conversations/*.db` | One SQLite store per conversation; token usage is decoded from each model step's protobuf metadata. Titles from `conversation_summaries.db`, prompts from `history.jsonl`. Models without a built-in price (Gemini) need a `pricing.json` entry, e.g. `"gemini-*"` |
+| Microsoft 365 Copilot | `work-m365` | `~/.local/share/ai-usage/m365-copilot.json`, written by `ai-usage m365-sync` | Daily Copilot action counts from the Graph usage report; requests only, no tokens. See below |
 | foundry-entra-proxy | client User-Agent | `~/Library/Logs/foundry-entra-proxy/proxy.log` | Cross-check only, **not** added to totals (overlaps Codex `work-foundry`) |
 | ai-gateway | gateway provider | `~/Library/Logs/ai-gateway/gateway.log` (`-gateway-log`) | Counted in totals; model is the upstream model, so it is priced. Dashboard tab **Gateway** |
 
@@ -437,3 +438,21 @@ Setup (once, by a repository admin):
 
 When the token expires, the step fails with a `homebrew-tap not notified` error; the release
 itself is already published and the six-hour poll catches up. Rotate the token and repeat step 2.
+
+## Microsoft 365 Copilot
+
+Graph reports no Copilot tokens, and no local logs exist, so this source counts Copilot *actions*
+per day (one request each, zero tokens) with the apps used as the session's tools. `ai-usage
+m365-sync` fetches them from the beta Graph report `getMicrosoft365CopilotUsageUserDetailByDate`
+and merges them into the store; the dashboard only reads the store and never calls Graph.
+
+Requirements: `az login` to the work tenant, a token for Graph with `Reports.Read.All` (admin
+consent), and, for a signed-in user, an Entra reporting role such as Reports Reader. The report
+covers its latest refresh date and the seven days before it, lags 24-72 hours, and is keyed by
+UPN, so a tenant that conceals user names in reports returns no rows for you. Run the sync daily
+(cron or launchd) to keep history; older days stay in the store.
+
+```zsh
+bin/ai-usage m365-sync                       # UPN and tenant from the Azure CLI
+bin/ai-usage m365-sync -upn me@contoso.com -tenant <tenant-id>
+```

@@ -28,6 +28,7 @@ const (
 	ToolAntigravity = "antigravity"
 	ToolProxy       = "foundry-proxy" // cross-check only; overlaps Codex work-foundry
 	ToolGateway     = "ai-gateway"
+	ToolM365        = "m365-copilot" // Microsoft 365 Copilot: requests only, Graph reports no tokens
 )
 
 // Slot returns the activity slot of t.

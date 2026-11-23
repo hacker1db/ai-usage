@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"ai-usage/internal/paths"
 	"ai-usage/internal/usage"
 )
 
@@ -18,6 +19,7 @@ type Options struct {
 	AntigravityHome string
 	ProxyLog        string
 	GatewayLog      string
+	M365Store       string // written by `ai-usage m365-sync`
 }
 
 // DefaultOptions returns the standard macOS locations (CODEX_HOME is honored).
@@ -33,6 +35,7 @@ func DefaultOptions() Options {
 		AntigravityHome: "~/.gemini/antigravity-cli",
 		ProxyLog:        "~/Library/Logs/foundry-entra-proxy/proxy.log",
 		GatewayLog:      "~/Library/Logs/ai-gateway/gateway.log",
+		M365Store:       usage.Tilde(paths.M365Store()),
 	}
 }
 
@@ -112,6 +115,9 @@ func CollectAll(agg *usage.Aggregator, o Options, c *Caches) ([]Status, Stats) {
 	}
 	status = append(status, CollectProxy(agg, o.ProxyLog))
 	status = append(status, CollectGateway(agg, o.GatewayLog))
+	if o.M365Store != "" {
+		status = append(status, CollectM365(agg, o.M365Store))
+	}
 	c.Claude.Prune()
 	c.Codex.Prune()
 	a, b := c.Claude.Stats(), c.Codex.Stats()
