@@ -50,8 +50,11 @@ func DetailGroupOf(tool, profile string) Group {
 		return g
 	}
 	label := tool
-	if tool == usage.ToolGateway {
+	switch tool {
+	case usage.ToolGateway:
 		label = "Gateway"
+	case usage.ToolM365:
+		label = "M365 Copilot"
 	}
 	if profile != "" {
 		label += " · " + profile
@@ -81,6 +84,7 @@ var Tabs = []Tab{
 	{Option{"antigravity", "Antigravity"}, func(t, _ string) bool { return t == usage.ToolAntigravity }},
 	{Option{"foundry", "Foundry"}, func(t, p string) bool { return p == "work-foundry" && t != usage.ToolProxy }},
 	{Option{"gateway", "Gateway"}, func(t, _ string) bool { return t == usage.ToolGateway }},
+	{Option{"m365", "M365 Copilot"}, func(t, _ string) bool { return t == usage.ToolM365 }},
 }
 
 type Metric struct {

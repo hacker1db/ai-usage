@@ -22,6 +22,7 @@ const (
 	ToolAntigravity = "antigravity"
 	ToolProxy       = "foundry-proxy"
 	ToolGateway     = "ai-gateway"
+	ToolM365        = "m365-copilot" // Microsoft 365 Copilot: requests only, Graph reports no tokens
 )
 
 func Slot(t time.Time) int64 { return t.Unix() / (SlotMinutes * 60) }

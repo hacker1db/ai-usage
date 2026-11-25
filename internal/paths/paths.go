@@ -16,6 +16,13 @@ func DataDir() string {
 	return filepath.Join(usage.Home, ".local", "share", "ai-usage")
 }
 
+func M365Store() string {
+	if f := os.Getenv("AI_USAGE_M365_STORE"); f != "" {
+		return usage.ExpandHome(f)
+	}
+	return filepath.Join(DataDir(), "m365-copilot.json")
+}
+
 func ConfigFile() string {
 	if f := os.Getenv("AI_USAGE_CONFIG"); f != "" {
 		return usage.ExpandHome(f)
