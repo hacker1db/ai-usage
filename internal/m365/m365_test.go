@@ -17,8 +17,6 @@ type fixedToken string
 
 func (f fixedToken) Token(context.Context) (string, error) { return string(f), nil }
 
-// fakeGraph serves the by-date report with refresh date 2026-11-20 and two users, paging the
-// first date and throttling once.
 func fakeGraph(t *testing.T) (*httptest.Server, *atomic.Int32) {
 	var throttled atomic.Int32
 	var srv *httptest.Server
@@ -150,7 +148,7 @@ func TestSyncReturnsAuthErrorWithoutProbing(t *testing.T) {
 
 func TestSyncSkipsEmptyProbeDates(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "2026-11-21") { // in window but no rows yet
+		if strings.Contains(r.URL.Path, "2026-11-21") {
 			_, _ = w.Write([]byte(`{"value":[]}`))
 			return
 		}
