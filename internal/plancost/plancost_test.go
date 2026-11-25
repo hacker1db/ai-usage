@@ -91,13 +91,13 @@ func TestLookupPrecedence(t *testing.T) {
 }
 
 func TestCostSplitsInputClasses(t *testing.T) {
-	// Input includes cache reads and writes: 1M fresh + 2M read + 1M write.
+
 	m := usage.Metrics{Input: 4_000_000, Cached: 2_000_000, CacheWrite: 1_000_000, Output: 1_000_000}
 	got := Price{Input: 10, CachedInput: 1, CacheWrite: 12.5, Output: 50}.Cost(m)
 	if want := 10 + 2 + 12.5 + 50.0; got != want {
 		t.Fatalf("cost %v, want %v", got, want)
 	}
-	// Inconsistent logs (cache counts above input) never produce negative fresh input.
+
 	bad := usage.Metrics{Input: 1, Cached: 5, Output: 0}
 	if c := (Price{Input: 100, CachedInput: 1}).Cost(bad); c != 5.0/1e6 {
 		t.Fatalf("cost %v", c)
@@ -168,7 +168,7 @@ func TestComputeComplete(t *testing.T) {
 	if !s.Complete || s.EstimatedCostUSD == nil {
 		t.Fatalf("want complete: %+v", s)
 	}
-	// s1: 1M fresh*10 + 1M cached*1 + 0.1M out*50 = 16; s2(personal): 1M fresh*10 = 10.
+
 	if *s.EstimatedCostUSD != 26 || s.PricedCostUSD != 26 {
 		t.Fatalf("cost %v / %v", *s.EstimatedCostUSD, s.PricedCostUSD)
 	}
@@ -195,7 +195,7 @@ func TestComputeIncompleteNeverReportsZero(t *testing.T) {
 	if s.EstimatedCostUSD != nil {
 		t.Fatalf("estimate must be null with unpriced models, got %v", *s.EstimatedCostUSD)
 	}
-	if s.PricedCostUSD != 10 { // beta-small: 1M*2 + 1M*8
+	if s.PricedCostUSD != 10 {
 		t.Fatalf("priced %v", s.PricedCostUSD)
 	}
 	if strings.Join(s.UnpricedModels, ",") != "gamma" || strings.Join(s.MissingSessions, ",") != "ghost" {
@@ -204,7 +204,7 @@ func TestComputeIncompleteNeverReportsZero(t *testing.T) {
 	if s.Sessions[0].CostUSD != nil || s.Sessions[0].PricedCostUSD != 10 {
 		t.Fatalf("session cost %+v", s.Sessions[0])
 	}
-	// The JSON contract: null, not 0, and empty lists, not null.
+
 	b, _ := json.Marshal(s)
 	for _, want := range []string{`"estimated_cost_usd":null`, `"version":1`} {
 		if !strings.Contains(string(b), want) {
@@ -230,8 +230,6 @@ func TestComputeMissingSessionNullsEstimate(t *testing.T) {
 	}
 }
 
-// Fresh input is clamped per session, so the model line must sum session costs, not reprice the
-// summed counters (which would let an over-reported cache count in one session hide another's input).
 func TestModelCostMatchesTotalAcrossSessions(t *testing.T) {
 	p, err := LoadPricing(writePricing(t, goodPricing))
 	if err != nil {
@@ -250,7 +248,7 @@ func TestModelCostMatchesTotalAcrossSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// a: 0 fresh + 2M cached*1 = 2; b: 1M fresh*10 = 10.
+
 	if *s.EstimatedCostUSD != 12 || *s.Models[0].CostUSD != 12 {
 		t.Fatalf("total %v, model %v", *s.EstimatedCostUSD, *s.Models[0].CostUSD)
 	}

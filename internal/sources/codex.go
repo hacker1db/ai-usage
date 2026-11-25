@@ -10,7 +10,6 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// CodexProviders maps a Codex model_provider id to a profile label.
 var CodexProviders = map[string]string{"openai": "personal-chatgpt", "foundry": "work-foundry", "azure": "work-foundry"}
 
 var patchFile = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add|Delete) File: (.+)$`)
@@ -72,15 +71,13 @@ type codexRecord struct {
 	rec        usage.Record
 }
 
-// CodexFile is one parsed rollout.
 type CodexFile struct {
 	records []codexRecord
 	session string
 	meta    usage.Meta
-	err     string // read failure; records hold whatever was read before it
+	err     string
 }
 
-// commandText reads a shell command given as a string or an argv array.
 func commandText(raw json.RawMessage) string {
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
@@ -101,9 +98,6 @@ func commandText(raw json.RawMessage) string {
 	return ""
 }
 
-// ParseCodexFile reads one Codex rollout. Newer rollouts carry token_usage_record events (one per
-// response); older ones only have cumulative token_count events, which are diffed so duplicates
-// don't double count.
 func ParseCodexFile(path string) CodexFile {
 	var events []codexEvent
 	readErr := usage.EachJSONLine(path, func(line []byte) {
@@ -237,7 +231,6 @@ func or(v, fallback string) string {
 	return fallback
 }
 
-// codexTitles reads thread names from session_index.jsonl (the latest entry per id wins).
 func codexTitles(root string) map[string]string {
 	titles := map[string]string{}
 	_ = usage.EachJSONLine(filepath.Join(root, "session_index.jsonl"), func(line []byte) {
@@ -252,7 +245,6 @@ func codexTitles(root string) map[string]string {
 	return titles
 }
 
-// CollectCodex adds Codex rollouts from sessions/ and archived_sessions/ under root.
 func CollectCodex(agg *usage.Aggregator, root string, cache *FileCache[CodexFile]) Status {
 	if cache == nil {
 		cache = NewFileCache[CodexFile]()

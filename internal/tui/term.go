@@ -7,7 +7,6 @@ import (
 	"unsafe"
 )
 
-// rawState is a terminal's saved settings.
 type rawState struct {
 	fd  int
 	old syscall.Termios
@@ -20,14 +19,11 @@ func ioctl(fd int, req uintptr, arg unsafe.Pointer) error {
 	return nil
 }
 
-// IsTerminal reports whether fd is a terminal.
 func IsTerminal(fd int) bool {
 	var t syscall.Termios
 	return ioctl(fd, ioctlGetTermios, unsafe.Pointer(&t)) == nil
 }
 
-// makeRaw puts fd in raw input mode (no echo, no line buffering, no signals from keys) and keeps
-// output processing so "\n" still works; restore undoes it.
 func makeRaw(fd int) (*rawState, error) {
 	var t syscall.Termios
 	if err := ioctl(fd, ioctlGetTermios, unsafe.Pointer(&t)); err != nil {
@@ -52,7 +48,6 @@ func (s *rawState) restore() {
 
 type winsize struct{ Row, Col, X, Y uint16 }
 
-// Size returns the terminal's columns and rows.
 func Size(fd int) (cols, rows int, ok bool) {
 	var ws winsize
 	if ioctl(fd, syscall.TIOCGWINSZ, unsafe.Pointer(&ws)) != nil || ws.Col == 0 {

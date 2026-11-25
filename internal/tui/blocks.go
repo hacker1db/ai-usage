@@ -2,21 +2,17 @@ package tui
 
 import "math"
 
-// Eighth-block glyphs: vertical bars fill from the bottom, horizontal bars from the left.
 var (
 	lowerBlocks = []rune{' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 	leftBlocks  = []rune{' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'}
 	sparkBlocks = []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 )
 
-// Segment is one colored run of a stacked bar, in eighths of a cell from the baseline.
 type Segment struct {
 	Color      string
-	Start, End int // [Start, End) in eighths
+	Start, End int
 }
 
-// Stack converts values into contiguous segments scaled so top maps to cells*8 eighths. Each
-// non-zero value keeps at least one eighth so small parts stay visible.
 func Stack(values []float64, colors []string, top float64, cells int) []Segment {
 	units := float64(cells * 8)
 	var out []Segment
@@ -37,9 +33,6 @@ func Stack(values []float64, colors []string, top float64, cells int) []Segment 
 	return out
 }
 
-// StackCell picks the glyph fill (0-8 eighths), foreground, and background for cell index i
-// (counted from the baseline) of a stacked bar. The segment at the cell's base fills n eighths in
-// fg; whatever occupies the rest of the cell shows as bg, so a boundary inside a cell stays exact.
 func StackCell(segs []Segment, i int) (n int, fg, bg string) {
 	lo, hi := i*8, i*8+8
 	for k, s := range segs {
@@ -47,7 +40,7 @@ func StackCell(segs []Segment, i int) (n int, fg, bg string) {
 			continue
 		}
 		if s.Start > lo {
-			// cell base is empty (can't happen for contiguous stacks, but be safe)
+
 			return 0, "", ""
 		}
 		n = min(s.End, hi) - lo
@@ -60,7 +53,6 @@ func StackCell(segs []Segment, i int) (n int, fg, bg string) {
 	return 0, "", ""
 }
 
-// Spark draws values as one row of block glyphs, resampling to width by summing.
 func Spark(values []float64, width int) []rune {
 	vals := resample(values, width)
 	mx := 0.0
@@ -78,7 +70,6 @@ func Spark(values []float64, width int) []rune {
 	return out
 }
 
-// resample sums consecutive values so the result has at most n entries.
 func resample(values []float64, n int) []float64 {
 	if n <= 0 || len(values) <= n {
 		return values

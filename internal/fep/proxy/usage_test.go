@@ -12,7 +12,6 @@ import (
 	"ai-usage/internal/proxylog"
 )
 
-// requestLog waits for the proxy's "request" log line (written after the response finishes) and decodes it.
 func requestLog(t *testing.T, h *harness) map[string]any {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -66,7 +65,7 @@ func TestUsageFromResponsesStream(t *testing.T) {
 		_, _ = io.WriteString(w, "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"usage\":null}}\n\n")
 		fl.Flush()
 		_, _ = io.WriteString(w, "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"usage\"}\n\n")
-		// Split the final event across writes to exercise line reassembly.
+
 		_, _ = io.WriteString(w, "event: response.completed\r\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":")
 		fl.Flush()
 		_, _ = io.WriteString(w, "40,\"output_tokens\":8,\"total_tokens\":48}}}\r\n\r\n")
@@ -137,7 +136,6 @@ func TestClientName(t *testing.T) {
 	}
 }
 
-// The ai-usage collector decodes request lines into proxylog.Request; this pins that contract.
 func TestRequestLogMatchesCollectorContract(t *testing.T) {
 	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -146,7 +144,7 @@ func TestRequestLogMatchesCollectorContract(t *testing.T) {
 	resp := h.do(t, http.MethodPost, "/openai/v1/responses", `{"model":"gpt-5.5"}`,
 		map[string]string{"Authorization": "Bearer " + testKey, "User-Agent": "codex_cli_rs/0.166.0"})
 	_, _ = io.ReadAll(resp.Body)
-	requestLog(t, h) // wait for the line
+	requestLog(t, h)
 
 	var got proxylog.Request
 	for _, line := range strings.Split(h.logText(), "\n") {

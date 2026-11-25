@@ -11,21 +11,6 @@ import (
 	"strings"
 )
 
-// The gateway is called by local programs (Caido, SDKs, scripts), not by web pages. A browser can
-// still reach 127.0.0.1, so every request passes browserGuard first:
-//
-//   - Host must name a loopback address. This defeats DNS rebinding, where a page on a hostile
-//     domain resolves its own name to 127.0.0.1 so the browser treats the gateway as same-origin.
-//   - Any request carrying an Origin header is refused unless that exact origin is listed in
-//     allowed_origins (empty by default). Requests without Origin but with a Sec-Fetch-Site other
-//     than "none" (navigations, <img>, <script>, form posts in older browsers) are refused too.
-//   - CORS preflights are answered only for allowed origins, and only for the methods and headers
-//     the API uses. Access-Control-Allow-Credentials is never sent; the key travels in a header.
-//   - POST bodies must be application/json, so no "simple" cross-site form or text/plain request
-//     can reach a handler even if a browser omitted Origin.
-//   - Every response carries headers that stop sniffing, framing, caching and cross-origin embedding.
-
-// corsAllowHeaders are the request headers an allowed origin may send.
 var corsAllowHeaders = []string{
 	"authorization", "x-api-key", "api-key", "content-type",
 	"anthropic-version", "anthropic-beta", "anthropic-dangerous-direct-browser-access",
@@ -34,7 +19,6 @@ var corsAllowHeaders = []string{
 	"x-stainless-timeout", "x-stainless-helper-method", "openai-organization", "openai-project",
 }
 
-// corsExposeHeaders are the response headers an allowed origin may read.
 var corsExposeHeaders = strings.Join([]string{
 	headerRequestID, headerGatewayError, "request-id", "x-request-id", "retry-after",
 	"x-ratelimit-limit-requests", "x-ratelimit-limit-tokens", "x-ratelimit-remaining-requests",
@@ -46,7 +30,6 @@ var corsExposeHeaders = strings.Join([]string{
 
 const corsMaxAge = "600"
 
-// setSecurityHeaders sets the headers every response carries.
 func setSecurityHeaders(h http.Header) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", "no-store")
@@ -57,8 +40,6 @@ func setSecurityHeaders(h http.Header) {
 	h.Add("Vary", "Origin")
 }
 
-// browserGuard applies the browser-facing policy. It returns false when it has already written the
-// response (a refusal, or a preflight answer).
 func (g *Gateway) browserGuard(w http.ResponseWriter, r *http.Request, c *call) bool {
 	h := w.Header()
 	if !isLoopbackHostHeader(r.Host) {
@@ -94,7 +75,6 @@ func (g *Gateway) browserGuard(w http.ResponseWriter, r *http.Request, c *call) 
 	return true
 }
 
-// preflight answers a CORS preflight. Only allowed origins reach it with allowed=true.
 func (g *Gateway) preflight(w http.ResponseWriter, r *http.Request, c *call, allowed bool) {
 	method := r.Header.Get("Access-Control-Request-Method")
 	if !allowed || (method != http.MethodGet && method != http.MethodPost) {
@@ -119,8 +99,6 @@ func (g *Gateway) preflight(w http.ResponseWriter, r *http.Request, c *call, all
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// originHeader reports the Origin header. Several Origin headers, or an empty one, count as present
-// so they are refused rather than ignored.
 func originHeader(r *http.Request) (string, bool) {
 	values, ok := r.Header["Origin"]
 	if !ok {
@@ -132,9 +110,6 @@ func originHeader(r *http.Request) (string, bool) {
 	return values[0], true
 }
 
-// secFetchSiteOK accepts requests without Sec-Fetch-Site (non-browser clients) and user-initiated
-// ones ("none": typed into the address bar). The gateway serves no pages, so "same-origin" can
-// only come from a rebinding attempt the Host check missed, and is refused with the rest.
 func secFetchSiteOK(v string) bool {
 	return v == "" || v == "none"
 }
@@ -144,8 +119,6 @@ func isJSONContentType(v string) bool {
 	return err == nil && mt == "application/json"
 }
 
-// isLoopbackHostHeader accepts "localhost", "*.localhost" and loopback IP literals, with or without
-// a port.
 func isLoopbackHostHeader(hostport string) bool {
 	host := hostport
 	if h, _, err := net.SplitHostPort(hostport); err == nil {
@@ -173,7 +146,6 @@ func splitHeaderList(values []string) []string {
 	return out
 }
 
-// checkOrigin validates one allowed_origins entry: an exact, serialized browser origin.
 func checkOrigin(o string) error {
 	if o == "*" || o == "null" {
 		return fmt.Errorf("%q is not allowed; list exact origins such as \"http://localhost:5173\"", o)

@@ -11,11 +11,8 @@ import (
 	"time"
 )
 
-// maxSSELine bounds one SSE line; a longer line ends the stream rather than growing without limit.
 const maxSSELine = 16 << 20
 
-// readSSE calls fn for every line of an SSE body (newline included). data is the trimmed payload of
-// a "data:" line and nil for any other line. fn returns false to stop early.
 func readSSE(r io.Reader, fn func(line, data []byte) bool) error {
 	br := bufio.NewReaderSize(r, 64<<10)
 	for {
@@ -53,10 +50,6 @@ func readLine(br *bufio.Reader) ([]byte, error) {
 	}
 }
 
-// ---------------------------------------------------------------------------------------------
-// OpenAI chunks -> Anthropic Messages events
-// ---------------------------------------------------------------------------------------------
-
 type anthropicStream struct {
 	w        io.Writer
 	flush    func()
@@ -65,10 +58,10 @@ type anthropicStream struct {
 	id       string
 	started  bool
 	finished bool
-	open     int // index of the open content block, -1 when none
+	open     int
 	openText bool
 	next     int
-	tools    map[int]int // OpenAI tool_call index -> Anthropic block index
+	tools    map[int]int
 	stop     string
 }
 
@@ -124,7 +117,6 @@ type oaiChunk struct {
 	Error *apiError `json:"error"`
 }
 
-// openAIChunk handles one Chat Completions stream payload. It returns false to stop reading.
 func (s *anthropicStream) openAIChunk(data []byte) bool {
 	var ch oaiChunk
 	if err := json.Unmarshal(data, &ch); err != nil {
@@ -219,10 +211,6 @@ func (s *anthropicStream) finish() {
 	s.event("message_stop", map[string]string{"type": "message_stop"})
 }
 
-// ---------------------------------------------------------------------------------------------
-// Anthropic Messages events -> OpenAI chunks
-// ---------------------------------------------------------------------------------------------
-
 type openAIStream struct {
 	w            io.Writer
 	flush        func()
@@ -232,7 +220,7 @@ type openAIStream struct {
 	id           string
 	created      int64
 	finishReason string
-	tools        map[int]int // Anthropic block index -> OpenAI tool_call index
+	tools        map[int]int
 	nextTool     int
 	finished     bool
 }
@@ -261,7 +249,6 @@ func (s *openAIStream) chunk(delta oaiOutMsg, finish *string) bool {
 	})
 }
 
-// anthropicEvent handles one Messages stream payload. It returns false to stop reading.
 func (s *openAIStream) anthropicEvent(data []byte) bool {
 	var ev antStreamEvent
 	if err := json.Unmarshal(data, &ev); err != nil {

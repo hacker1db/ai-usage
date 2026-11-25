@@ -24,7 +24,7 @@ func TestBraillePlotting(t *testing.T) {
 	b := NewBraille(2, 1)
 	b.Set(0, 0, "#111111")
 	b.Set(1, 3, "#222222")
-	b.Set(9, 9, "#333333") // outside: ignored
+	b.Set(9, 9, "#333333")
 	if r, c := b.Cell(0, 0); r != rune(0x2800+0x01+0x80) || c != "#222222" {
 		t.Fatalf("cell 0 = %U %s, want U+2881 in the last color drawn", r, c)
 	}
@@ -170,7 +170,7 @@ func TestSectionsPresent(t *testing.T) {
 			t.Errorf("frame is missing %q", want)
 		}
 	}
-	// The cumulative budget line needs every group in the tab to have a budget: only Claude does.
+
 	if strings.Contains(all, "┄ budget") {
 		t.Errorf("All tab drew a budget line although Copilot and Codex have no budget")
 	}
@@ -179,8 +179,6 @@ func TestSectionsPresent(t *testing.T) {
 	}
 }
 
-// A dashboard from another version sends a snapshot this build can't read: collect locally
-// instead of showing only an error.
 func TestPickSourceFallsBackOnIncompatibleSnapshot(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"columns":["hour"],"rows":[]}`))

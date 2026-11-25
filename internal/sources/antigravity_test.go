@@ -12,7 +12,6 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// pb helpers build protobuf fixtures: field numbers with varint or nested-message values.
 func pbKey(field, wire int) []byte { return pbAppendVarint(nil, uint64(field<<3|wire)) } //nolint:gosec // test fixture
 
 func pbAppendVarint(b []byte, v uint64) []byte {
@@ -63,19 +62,18 @@ func TestCollectAntigravity(t *testing.T) {
 	now := time.Now().Add(-time.Minute)
 	stamp := pbMsg(agStepCreated, pbInt(1, uint64(now.Unix())), pbInt(2, 5)) //nolint:gosec // test fixture
 	steps := [][]byte{
-		stamp, // user step: no usage
+		stamp,
 		cat(stamp, pbMsg(agStepUsage, pbInt(agUsageModel, 1532), pbInt(agUsageInput, 100), pbInt(agUsageOutput, 30),
 			pbInt(agUsageCacheRead, 1000), pbInt(agUsageThinking, 20), pbStr(7, "resp"))),
-		cat(stamp, pbMsg(agStepUsage, pbInt(agUsageModel, 1532), pbInt(6, 24))), // failed request: no tokens
+		cat(stamp, pbMsg(agStepUsage, pbInt(agUsageModel, 1532), pbInt(6, 24))),
 		cat(stamp, pbMsg(agStepUsage, pbInt(agUsageModel, 77), pbInt(agUsageInput, 5), pbInt(agUsageOutput, 1))),
-		{0xff}, // malformed
+		{0xff},
 	}
 	gen := cat(pbStr(4, "x"), pbMsg(agGenInfo, pbInt(agGenInfoModel, 1532), pbStr(agGenInfoName, "gemini-test")))
 
 	db := filepath.Join(conv, "conv-1.db")
 	var sql strings.Builder
-	// WAL mode, then a clean close, leaves no -wal or -shm: the read-only open fails and the
-	// reader must fall back to immutable, as with a real idle Antigravity store.
+
 	sql.WriteString("PRAGMA journal_mode=WAL; CREATE TABLE steps (idx integer PRIMARY KEY, metadata blob);" +
 		"CREATE TABLE gen_metadata (idx integer PRIMARY KEY, data blob);")
 	for i, s := range steps {

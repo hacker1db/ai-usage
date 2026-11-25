@@ -1,5 +1,3 @@
-// Package web serves the dashboard: server-rendered HTML with inline SVG charts and a small
-// vanilla script for tooltips and live refresh. No framework and no build step.
 package web
 
 import (
@@ -31,7 +29,6 @@ var templateFS embed.FS
 //go:embed static
 var staticFS embed.FS
 
-// securityHeaders go on every response. SVG colors are classes, so no inline styles are needed.
 var securityHeaders = map[string]string{
 	"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; " +
 		"connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
@@ -40,12 +37,9 @@ var securityHeaders = map[string]string{
 	"Cache-Control":          "no-cache",
 }
 
-// reportCSP serves the skill's self-contained report sandboxed (opaque origin), so its inline
-// scripts can't call this dashboard's API.
 const reportCSP = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; img-src data:; " +
 	"style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
 
-// Server is the dashboard's HTTP handler.
 type Server struct {
 	c             *snapshot.Collector
 	allowedHosts  map[string]bool
@@ -56,7 +50,6 @@ type Server struct {
 	tokenCSS      string
 }
 
-// New returns the handler for a collector listening on port.
 func New(c *snapshot.Collector, port int, workReportDir string, log *slog.Logger) (*Server, error) {
 	t, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
@@ -83,7 +76,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for k, v := range securityHeaders {
 		w.Header().Set(k, v)
 	}
-	// Loopback peers only, and only our own Host header (blocks DNS rebinding).
+
 	if !isLoopback(r.RemoteAddr) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "loopback only"})
 		return
@@ -148,7 +141,7 @@ func (s *Server) apiSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiRefresh(w http.ResponseWriter, r *http.Request) {
-	// A custom header can't be sent cross-origin without a CORS preflight this server never approves.
+
 	if r.Header.Get("X-Requested-With") != "ai-usage" {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return
@@ -318,12 +311,11 @@ func toFloat(v any) float64 {
 	return math.NaN()
 }
 
-// countBars draws a ranked list of counts (files, tools, models) as thin horizontal bars.
 func countBars(counts []usage.Count, unit string) template.HTML {
 	if len(counts) == 0 {
 		return template.HTML(`<p class="empty">None recorded.</p>`)
 	}
-	// A narrow canvas: these sit in half-width cards, where a 960-wide viewBox shrinks the text.
+
 	const w, rowH, labelW = 560.0, 24.0, 300.0
 	h := float64(len(counts)) * rowH
 	s := newSVG(w, h, "chart counts", unit)

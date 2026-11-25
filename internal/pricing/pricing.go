@@ -1,6 +1,3 @@
-// Package pricing estimates what token usage would cost at the providers' public pay-as-you-go API
-// prices. It is an API-equivalent figure, not a bill: subscriptions (Claude Pro/Max, ChatGPT) are
-// flat-rate, and provider-reported billing lives in the billing package.
 package pricing
 
 import (
@@ -10,38 +7,28 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// AsOf is when the table was copied from the sources below.
 const AsOf = "2026-11-12"
 
-// Sources are the public price pages the table comes from.
 var Sources = []string{
 	"https://platform.claude.com/docs/en/about-claude/pricing",
 	"https://developers.openai.com/api/docs/pricing",
 	"https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing",
 }
 
-// CopilotCreditUSD is GitHub's published rate for one Copilot AI credit
-// (https://docs.github.com/en/copilot/concepts/billing-and-usage/individuals/billing). Copilot's
-// local logs record credits per request, priced from the same per-token model rates.
 const CopilotCreditUSD = 0.01
 
-// Price is USD per million tokens at standard (non-batch, non-fast, global) rates.
 type Price struct {
 	Input, CacheWrite, CacheWrite1h, CacheRead, Output float64
 }
 
-// anthropic builds a Claude price: cache writes are 1.25x (5 minutes) and 2x (1 hour) input.
 func anthropic(in, read, out float64) Price {
 	return Price{Input: in, CacheWrite: in * 1.25, CacheWrite1h: in * 2, CacheRead: read, Output: out}
 }
 
-// openai builds an OpenAI price; Codex reports one kind of cache write (30-minute, 1.25x input).
 func openai(in, read, out float64) Price {
 	return Price{Input: in, CacheWrite: in * 1.25, CacheWrite1h: in * 1.25, CacheRead: read, Output: out}
 }
 
-// Table maps model IDs to prices. Claude Haiku 5.5 uses its prompts-up-to-100K price (the higher
-// tier needs per-request prompt sizes, which the hourly rows don't keep).
 var Table = map[string]Price{
 	"claude-fable-5-2":  anthropic(8, 0.20, 40),
 	"claude-mythos-5-2": anthropic(8, 0.20, 40),
@@ -72,9 +59,6 @@ var Table = map[string]Price{
 	"gpt-6-luna":    openai(0.10, 0.01, 0.50),
 }
 
-// Lookup finds a model's price. It accepts the ID variants logs use: a "[1m]" context suffix, a
-// provider prefix ("anthropic.", "openai/"), dotted Claude versions ("claude-opus-4.8"), and a
-// trailing date snapshot ("-20260401").
 func Lookup(model string) (Price, bool) {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if i := strings.IndexByte(m, '['); i >= 0 {
@@ -106,8 +90,6 @@ func isDigits(s string) bool {
 	return s != ""
 }
 
-// Cost is the USD cost of x at p. Input includes cache reads and writes, which are priced
-// separately; a 1-hour cache write is priced at its own rate.
 func (p Price) Cost(x usage.Metrics) float64 {
 	w1h := min(x.CacheWrite1h, x.CacheWrite)
 	fresh := max(x.Input-x.Cached-x.CacheWrite, 0)
@@ -116,14 +98,12 @@ func (p Price) Cost(x usage.Metrics) float64 {
 	return usd / 1e6
 }
 
-// Estimate is an accumulated API-price estimate.
 type Estimate struct {
 	USD      float64
-	Priced   int64            // tokens with a known price
-	Unpriced map[string]int64 // tokens per model with no known price
+	Priced   int64
+	Unpriced map[string]int64
 }
 
-// Add prices x for model; tools whose rows are a cross-check of other rows are the caller's to skip.
 func (e *Estimate) Add(model string, x usage.Metrics) {
 	if p, ok := Lookup(model); ok {
 		e.USD += p.Cost(x)
@@ -139,13 +119,11 @@ func (e *Estimate) Add(model string, x usage.Metrics) {
 	e.Unpriced[model] += x.Total
 }
 
-// AddCredits adds Copilot AI credits (already priced by GitHub) for tokens x of model.
 func (e *Estimate) AddCredits(credits float64, x usage.Metrics) {
 	e.USD += credits * CopilotCreditUSD
 	e.Priced += x.Total
 }
 
-// Merge adds o into e.
 func (e *Estimate) Merge(o Estimate) {
 	e.USD += o.USD
 	e.Priced += o.Priced
@@ -157,7 +135,6 @@ func (e *Estimate) Merge(o Estimate) {
 	}
 }
 
-// UnpricedModels lists the unpriced models, most tokens first.
 func (e Estimate) UnpricedModels() []string {
 	out := make([]string, 0, len(e.Unpriced))
 	for k := range e.Unpriced {
@@ -172,7 +149,6 @@ func (e Estimate) UnpricedModels() []string {
 	return out
 }
 
-// UnpricedTokens is the total of tokens with no known price.
 func (e Estimate) UnpricedTokens() int64 {
 	var n int64
 	for _, v := range e.Unpriced {

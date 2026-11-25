@@ -22,10 +22,10 @@ func TestLookupVariants(t *testing.T) {
 }
 
 func TestCostSplitsInputByCacheKind(t *testing.T) {
-	p, _ := Lookup("claude-opus-5-5") // $4 in, $5 5m write, $8 1h write, $0.20 read, $20 out
+	p, _ := Lookup("claude-opus-5-5")
 	x := usage.Metrics{Input: 4_000_000, Cached: 1_000_000, CacheWrite: 2_000_000, CacheWrite1h: 1_000_000,
 		Output: 1_000_000, Total: 5_000_000}
-	// fresh 1M*4 + read 1M*0.20 + 5m write 1M*5 + 1h write 1M*8 + out 1M*20
+
 	if got, want := p.Cost(x), 4+0.20+5+8+20.0; math.Abs(got-want) > 1e-9 {
 		t.Fatalf("cost = %v, want %v", got, want)
 	}

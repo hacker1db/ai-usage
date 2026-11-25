@@ -8,12 +8,8 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// M365Profile is the profile label for Microsoft 365 Copilot rows.
 const M365Profile = "work-m365"
 
-// CollectM365 reads the store written by `ai-usage m365-sync`. It never calls Graph. Each
-// Copilot action counts as one request with no tokens (Graph doesn't report them), placed at
-// local noon of its day, and each active day is one session whose tools are the apps used.
 func CollectM365(agg *usage.Aggregator, storePath string) Status {
 	storePath = usage.ExpandHome(storePath)
 	st := Status{Source: usage.ToolM365, Path: usage.Tilde(storePath)}

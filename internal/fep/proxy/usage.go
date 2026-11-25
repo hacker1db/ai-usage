@@ -10,12 +10,8 @@ import (
 	"ai-usage/internal/proxylog"
 )
 
-// maxUsageScanBytes bounds what the usage scanner buffers: a whole JSON body, or one SSE line.
-// Bodies or lines past the limit pass through untouched; only the token counts are lost.
 const maxUsageScanBytes = 16 << 20
 
-// usage is the normalized token accounting for one upstream response. Responses API
-// (input/output_tokens) and Chat Completions or embeddings (prompt/completion_tokens) both map here.
 type usage struct {
 	found     bool
 	input     int64
@@ -42,8 +38,6 @@ type rawUsage struct {
 	CompletionTokensDetails *usageDetails `json:"completion_tokens_details"`
 }
 
-// usageEnvelope matches a non-streamed body ({"usage": ...}), a Chat Completions stream chunk
-// ({"usage": ...}), and a Responses stream event ({"response": {"usage": ...}}).
 type usageEnvelope struct {
 	Usage    *rawUsage `json:"usage"`
 	Response *struct {
@@ -87,7 +81,6 @@ func (u *usage) absorb(data []byte) {
 	}
 }
 
-// logAttrs returns the slog key/value pairs for the request log line, or nil when nothing was found.
 func (u *usage) logAttrs() []any {
 	if u == nil || !u.found {
 		return nil
@@ -101,8 +94,6 @@ func (u *usage) logAttrs() []any {
 	}
 }
 
-// usageBody passes the upstream body through unchanged while feeding a copy to the usage parser.
-// SSE is parsed one "data:" line at a time; anything else is buffered and parsed at EOF.
 type usageBody struct {
 	io.ReadCloser
 	into     *usage

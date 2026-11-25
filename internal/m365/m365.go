@@ -1,11 +1,3 @@
-// Package m365 syncs one user's Microsoft 365 Copilot daily usage from the Microsoft Graph
-// Copilot usage report into a local store that the collector reads offline.
-//
-// Graph exposes no per-prompt token counts. The beta report
-// getMicrosoft365CopilotUsageUserDetailByDate gives, per user and day, a Copilot action count,
-// chat query counts, and per-app activity flags, for the latest refresh date and the seven days
-// before it. The data lags 24-72 hours. Calling it needs Reports.Read.All (admin consent) and, for
-// delegated tokens, a reporting role such as Reports Reader.
 package m365
 
 import (
@@ -23,13 +15,10 @@ import (
 	"time"
 )
 
-// GraphBase is the Graph endpoint root. Tests point it at a fake server.
 const GraphBase = "https://graph.microsoft.com"
 
-// Scope is the token scope for Graph.
 const Scope = "https://graph.microsoft.com/.default"
 
-// Day is one user's Copilot usage on one date, as the report returns it.
 type Day struct {
 	RefreshDate  string `json:"reportRefreshDate"`
 	Date         string `json:"reportSelectedDate"`
@@ -53,7 +42,6 @@ type Day struct {
 	FetchedAtUTC string `json:"fetchedAt,omitempty"`
 }
 
-// Apps lists the apps the day was active in.
 func (d Day) Apps() []string {
 	var out []string
 	for _, a := range []struct {
@@ -69,25 +57,20 @@ func (d Day) Apps() []string {
 	return out
 }
 
-// TokenSource returns a bearer token for Graph.
 type TokenSource interface {
 	Token(ctx context.Context) (string, error)
 }
 
-// Client calls the Graph report.
 type Client struct {
-	Base   string // GraphBase when empty
+	Base   string
 	HTTP   *http.Client
 	Tokens TokenSource
-	// Sleep waits between throttled retries; tests replace it.
+
 	Sleep func(time.Duration)
 }
 
-// ErrNoRows means the report had no row for the user, which usually means the tenant conceals
-// user names in reports (Microsoft 365 admin center > Settings > Org settings > Reports).
 var ErrNoRows = errors.New("no report rows for this user; if the tenant conceals user names in reports, ask an admin to show them, or pass the concealed id as -upn")
 
-// FetchDay returns every row the report has for date (YYYY-MM-DD), following @odata.nextLink.
 func (c *Client) FetchDay(ctx context.Context, date string) ([]Day, error) {
 	base := c.Base
 	if base == "" {
@@ -99,7 +82,7 @@ func (c *Client) FetchDay(ctx context.Context, date string) ([]Day, error) {
 		if pages > 500 {
 			return nil, errors.New("too many report pages")
 		}
-		// Only follow links back to the same host, so a token never leaves Graph.
+
 		if !strings.HasPrefix(next, base+"/") {
 			return nil, fmt.Errorf("refusing nextLink outside %s", base)
 		}
@@ -160,7 +143,6 @@ func (c *Client) get(ctx context.Context, url string, v any) error {
 	}
 }
 
-// GraphError is a non-success Graph response.
 type GraphError struct {
 	Status int
 	Msg    string
@@ -187,11 +169,8 @@ func graphError(status int, body []byte) error {
 	return &GraphError{Status: status, Msg: msg + hint}
 }
 
-// Sync fetches the report's newest window and returns upn's rows. The window is the latest
-// refresh date and the seven days before it; the refresh date is learned from the first call.
 func (c *Client) Sync(ctx context.Context, upn string, now time.Time) ([]Day, error) {
-	// Probe dates back from today until one is inside the window and has rows; a date outside the
-	// window is rejected with 400, and any other error (auth, throttling) is returned as is.
+
 	refresh := ""
 	for back := 2; back <= 10 && refresh == ""; back++ {
 		rows, err := c.FetchDay(ctx, now.UTC().AddDate(0, 0, -back).Format("2006-01-02"))
@@ -239,14 +218,11 @@ func (c *Client) Sync(ctx context.Context, upn string, now time.Time) ([]Day, er
 	return out, nil
 }
 
-// Store is the local file of synced days, keyed by date. Newer fetches of a date replace older
-// ones, and dates that fall out of Graph's window are kept, so history grows with each sync.
 type Store struct {
 	UPN  string         `json:"upn"`
 	Days map[string]Day `json:"days"`
 }
 
-// Load reads a store; a missing file is an empty store.
 func Load(path string) (Store, error) {
 	s := Store{Days: map[string]Day{}}
 	b, err := os.ReadFile(path)
@@ -265,7 +241,6 @@ func Load(path string) (Store, error) {
 	return s, nil
 }
 
-// Merge adds days for upn. A store for another user is replaced rather than mixed.
 func (s *Store) Merge(upn string, days []Day) {
 	if !strings.EqualFold(s.UPN, upn) {
 		s.UPN, s.Days = upn, map[string]Day{}
@@ -275,7 +250,6 @@ func (s *Store) Merge(upn string, days []Day) {
 	}
 }
 
-// Sorted returns the days in date order.
 func (s Store) Sorted() []Day {
 	out := make([]Day, 0, len(s.Days))
 	for _, d := range s.Days {
@@ -285,7 +259,6 @@ func (s Store) Sorted() []Day {
 	return out
 }
 
-// Save writes the store atomically with owner-only permissions.
 func (s Store) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -294,8 +267,7 @@ func (s Store) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	// CreateTemp makes a new owner-only file with a random name, so concurrent syncs never share a
-	// temporary file and a pre-existing one can't lend its permissions or a symlink.
+
 	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err

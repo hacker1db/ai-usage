@@ -1,5 +1,3 @@
-// Package view turns a snapshot plus the viewer's filters into typed chart models. The web and
-// terminal renderers draw the same models, so both show the same numbers.
 package view
 
 import (
@@ -11,15 +9,12 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// Group is a tool:profile series. Slot is its fixed categorical color slot (1-8; 0 = Other).
-// Color follows the entity, never its rank, so filtering never repaints a series.
 type Group struct {
 	Key   string
 	Label string
 	Slot  int
 }
 
-// Groups in their fixed palette order (validated adjacent-pair CVD safe in both modes).
 var Groups = []Group{
 	{"claude-code:personal", "Claude · personal", 1},
 	{"claude-code:work-subscription", "Claude · work", 2},
@@ -32,7 +27,6 @@ var Groups = []Group{
 	{"claude-code:no-profile", "Claude · no profile", 0},
 }
 
-// Other collects any tool:profile without a slot.
 var Other = Group{"other", "Other", 0}
 
 var groupByKey = func() map[string]Group {
@@ -43,7 +37,6 @@ var groupByKey = func() map[string]Group {
 	return m
 }()
 
-// GroupOf returns the series a tool/profile belongs to.
 func GroupOf(tool, profile string) Group {
 	if g, ok := groupByKey[tool+":"+profile]; ok {
 		return g
@@ -51,9 +44,6 @@ func GroupOf(tool, profile string) Group {
 	return Other
 }
 
-// DetailGroupOf is GroupOf for per-row tables: a pair without a slot keeps the Other color but is
-// labeled by its own tool and profile ("Gateway · work-foundry"), so rows from different gateway
-// providers stay apart. Charts keep using GroupOf and its fixed palette.
 func DetailGroupOf(tool, profile string) Group {
 	g := GroupOf(tool, profile)
 	if g.Key != Other.Key {
@@ -72,7 +62,6 @@ func DetailGroupOf(tool, profile string) Group {
 	return Group{Key: tool + ":" + profile, Label: label, Slot: Other.Slot}
 }
 
-// order returns a group's position in the fixed order (Other last).
 func (g Group) order() int {
 	if g.Slot == 0 {
 		return len(Groups)
@@ -80,16 +69,13 @@ func (g Group) order() int {
 	return g.Slot - 1
 }
 
-// Option is a selectable control value.
 type Option struct{ ID, Label string }
 
-// Tab filters rows to a tool or profile family.
 type Tab struct {
 	Option
 	Match func(tool, profile string) bool
 }
 
-// Tabs in display order.
 var Tabs = []Tab{
 	{Option{"all", "All"}, func(t, _ string) bool { return t != usage.ToolProxy }},
 	{Option{"claude", "Claude"}, func(t, _ string) bool { return t == usage.ToolClaude }},
@@ -101,13 +87,11 @@ var Tabs = []Tab{
 	{Option{"m365", "M365 Copilot"}, func(t, _ string) bool { return t == usage.ToolM365 }},
 }
 
-// Metric is what the charts count.
 type Metric struct {
 	Option
 	Unit string
 }
 
-// Metrics in display order.
 var Metrics = []Metric{
 	{Option{"total", "Total tokens"}, "tokens"},
 	{Option{"uncached", "Uncached"}, "uncached tokens"},
@@ -115,10 +99,8 @@ var Metrics = []Metric{
 	{Option{"requests", "Requests"}, "requests"},
 }
 
-// Row returns the metric's value for an hourly row.
 func (m Metric) Row(r history.HourRow) float64 { return m.Of(r.Metrics) }
 
-// Of returns the metric's value for a set of counters.
 func (m Metric) Of(x usage.Metrics) float64 {
 	switch m.ID {
 	case "uncached":
@@ -131,7 +113,6 @@ func (m Metric) Of(x usage.Metrics) float64 {
 	return float64(x.Total)
 }
 
-// Session returns the metric's value for a session summary.
 func (m Metric) Session(s usage.SessionRow) float64 {
 	switch m.ID {
 	case "uncached":
@@ -144,37 +125,31 @@ func (m Metric) Session(s usage.SessionRow) float64 {
 	return float64(s.Total)
 }
 
-// Range is a time window and its bucket size in hours.
 type Range struct {
 	Option
 	Hours  int
 	Bucket int
 }
 
-// Ranges in display order.
 var Ranges = []Range{
 	{Option{"24h", "24h"}, 24, 1},
 	{Option{"7d", "7d"}, 24 * 7, 4},
 	{Option{"30d", "30d"}, 24 * 30, 24},
 }
 
-// Burn is a trailing window for burn rates.
 type Burn struct {
 	Option
 	Hours int
 }
 
-// Burns in display order.
 var Burns = []Burn{{Option{"1", "1h"}, 1}, {Option{"3", "3h"}, 3}, {Option{"6", "6h"}, 6}}
 
-// SessionSorts in display order.
 var SessionSorts = []Option{{"recent", "Recent"}, {"tokens", "Tokens"}, {"active", "Active time"}}
 
-// Filters are the viewer's selections. Unknown values fall back to the defaults.
 type Filters struct {
 	Tab, Metric, Range, Burn, Sort, Query string
-	Own                                   string // ownership label filter for the Work section; "" = all
-	Profile                               string // profile filter: a profiles: set name or a tool:profile key; "" = all
+	Own                                   string
+	Profile                               string
 }
 
 var (
@@ -182,17 +157,14 @@ var (
 	profileRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._:-]{0,63}$`)
 )
 
-// Defaults are the initial selections.
 var Defaults = Filters{Tab: "all", Metric: "total", Range: "7d", Burn: "3", Sort: "recent"}
 
-// FromQuery reads filters from URL query parameters.
 func FromQuery(q url.Values) Filters {
 	f := Filters{Tab: q.Get("tab"), Metric: q.Get("metric"), Range: q.Get("range"), Burn: q.Get("burn"),
 		Sort: q.Get("sort"), Query: strings.TrimSpace(q.Get("q")), Own: q.Get("own"), Profile: q.Get("profile")}
 	return f.Normalize()
 }
 
-// Link encodes non-default filters, with overrides applied, for links.
 func (f Filters) Link(override ...string) string {
 	g := f
 	for i := 0; i+1 < len(override); i += 2 {
@@ -234,7 +206,6 @@ func (f Filters) Link(override ...string) string {
 	return "?" + q.Encode()
 }
 
-// Normalize replaces unknown values with defaults.
 func (f Filters) Normalize() Filters {
 	pick := func(v string, opts []Option, d string) string {
 		for _, o := range opts {
@@ -250,10 +221,10 @@ func (f Filters) Normalize() Filters {
 	f.Burn = pick(f.Burn, options(Burns, func(b Burn) Option { return b.Option }), Defaults.Burn)
 	f.Sort = pick(f.Sort, SessionSorts, Defaults.Sort)
 	if f.Own = strings.ToLower(f.Own); !ownRe.MatchString(f.Own) {
-		f.Own = "" // labels come from projects.yaml; Build drops one that isn't configured
+		f.Own = ""
 	}
 	if f.Profile = strings.ToLower(f.Profile); !profileRe.MatchString(f.Profile) {
-		f.Profile = "" // Build drops a name that isn't a configured set or a profile with data
+		f.Profile = ""
 	}
 	if len(f.Query) > 200 {
 		f.Query = f.Query[:200]
@@ -278,7 +249,6 @@ func find[T any](xs []T, id string, get func(T) Option) T {
 	return xs[0]
 }
 
-// TabOf, MetricOf, RangeOf, and BurnOf resolve the selected values.
 func (f Filters) TabOf() Tab { return find(Tabs, f.Tab, func(t Tab) Option { return t.Option }) }
 func (f Filters) MetricOf() Metric {
 	return find(Metrics, f.Metric, func(m Metric) Option { return m.Option })
@@ -288,7 +258,6 @@ func (f Filters) RangeOf() Range {
 }
 func (f Filters) BurnOf() Burn { return find(Burns, f.Burn, func(b Burn) Option { return b.Option }) }
 
-// Cycle returns the option after current (wrapping), for keyboard controls.
 func Cycle(opts []Option, current string, step int) string {
 	for i, o := range opts {
 		if o.ID == current {
@@ -298,7 +267,6 @@ func Cycle(opts []Option, current string, step int) string {
 	return opts[0].ID
 }
 
-// TabOptions, MetricOptions, RangeOptions, and BurnOptions list the controls.
 func TabOptions() []Option    { return options(Tabs, func(t Tab) Option { return t.Option }) }
 func MetricOptions() []Option { return options(Metrics, func(m Metric) Option { return m.Option }) }
 func RangeOptions() []Option  { return options(Ranges, func(r Range) Option { return r.Option }) }

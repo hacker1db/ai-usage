@@ -19,25 +19,22 @@ import (
 	"ai-usage/internal/view"
 )
 
-// Options configure the TUI.
 type Options struct {
-	URL     string           // running dashboard, e.g. http://127.0.0.1:8790
-	Local   bool             // skip the dashboard and collect in-process
-	Collect snapshot.Options // used for local collection (history should be read-only)
+	URL     string
+	Local   bool
+	Collect snapshot.Options
 	Theme   Theme
-	Width   int // -once width; 0 = detect
+	Width   int
 	Out     io.Writer
-	Filters view.Filters // initial selections
+	Filters view.Filters
 }
 
-// source supplies snapshots.
 type source interface {
 	Start(ctx context.Context)
 	Current() (*snapshot.Snapshot, Status)
 	Refresh()
 }
 
-// serverSource polls a running dashboard's /api/usage.
 type serverSource struct {
 	base   string
 	label  string
@@ -61,7 +58,6 @@ func newServerSource(base string) *serverSource {
 		client: &http.Client{Timeout: 10 * time.Second}, poke: make(chan struct{}, 1)}
 }
 
-// fetch returns a network error (as opposed to an HTTP or decode problem) when the server is down.
 func (s *serverSource) fetch(ctx context.Context) (netErr error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.base+"/api/usage", nil)
 	if err != nil {
@@ -131,7 +127,6 @@ func (s *serverSource) Current() (*snapshot.Snapshot, Status) {
 	return s.snap, st
 }
 
-// Refresh asks the dashboard to collect now, then re-fetches a few times while it does.
 func (s *serverSource) Refresh() {
 	go func() {
 		req, err := http.NewRequest(http.MethodPost, s.base+"/api/refresh", nil)
@@ -152,7 +147,6 @@ func (s *serverSource) Refresh() {
 	}()
 }
 
-// localSource collects in-process.
 type localSource struct{ c *snapshot.Collector }
 
 func (l *localSource) Start(ctx context.Context) { go l.c.Run(ctx) }
@@ -171,7 +165,6 @@ func (l *localSource) Current() (*snapshot.Snapshot, Status) {
 
 func (l *localSource) Refresh() { l.c.Wake() }
 
-// pickSource uses the dashboard when it answers, else collects locally.
 func pickSource(ctx context.Context, o Options) (source, string) {
 	if !o.Local && o.URL != "" {
 		s := newServerSource(o.URL)
@@ -181,7 +174,7 @@ func pickSource(ctx context.Context, o Options) (source, string) {
 		var ne net.Error
 		var oe *net.OpError
 		s.mu.Lock()
-		incompatible := err == nil && s.snap == nil && s.err != nil // e.g. a dashboard from another version
+		incompatible := err == nil && s.snap == nil && s.err != nil
 		s.mu.Unlock()
 		if err == nil && !incompatible {
 			return s, ""
@@ -193,7 +186,6 @@ func pickSource(ctx context.Context, o Options) (source, string) {
 	return &localSource{snapshot.New(o.Collect)}, ""
 }
 
-// Once prints one frame (header and body) to o.Out.
 func Once(ctx context.Context, o Options) error {
 	src, _ := pickSource(ctx, o)
 	if l, ok := src.(*localSource); ok {
@@ -214,7 +206,6 @@ func Once(ctx context.Context, o Options) error {
 	return err
 }
 
-// Run starts the live dashboard on the terminal until the user quits.
 func Run(ctx context.Context, o Options) (err error) {
 	in, out := int(os.Stdin.Fd()), os.Stdout
 	if !IsTerminal(in) {
@@ -269,7 +260,6 @@ func Run(ctx context.Context, o Options) (err error) {
 	}
 }
 
-// screen is the live view state.
 type screen struct {
 	filters view.Filters
 	theme   Theme
@@ -279,7 +269,6 @@ type screen struct {
 	bodyLen int
 }
 
-// key handles one key; it returns true to quit.
 func (s *screen) key(k string, src source) bool {
 	f := &s.filters
 	page := max(s.bodyH-2, 1)
@@ -422,7 +411,6 @@ func (s *screen) draw(out io.Writer, src source) {
 	_, _ = io.WriteString(out, b.String())
 }
 
-// readKeys decodes stdin bytes into key names until stdin closes.
 func readKeys(r io.Reader, keys chan<- string) {
 	defer close(keys)
 	buf := make([]byte, 64)
@@ -437,8 +425,6 @@ func readKeys(r io.Reader, keys chan<- string) {
 	}
 }
 
-// ParseKeys splits a read into key names: printable characters as themselves, plus "tab",
-// "shift-tab", "up", "down", "pgup", "pgdn", "home", "end", "esc", and "ctrl-<letter>".
 func ParseKeys(b []byte) []string {
 	var out []string
 	for i := 0; i < len(b); i++ {
@@ -465,7 +451,6 @@ func ParseKeys(b []byte) []string {
 	return out
 }
 
-// csi decodes the rest of an escape sequence and returns its name and length consumed.
 func csi(b []byte) (string, int) {
 	names := map[string]string{"A": "up", "B": "down", "C": "right", "D": "left", "H": "home", "F": "end",
 		"Z": "shift-tab", "5~": "pgup", "6~": "pgdn", "1~": "home", "4~": "end", "7~": "home", "8~": "end"}

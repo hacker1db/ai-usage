@@ -7,9 +7,6 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// CollectGateway reads ai-gateway request lines. Unlike the Foundry proxy log these count toward
-// totals: the gateway's callers (Caido, scripts) leave no session logs of their own. The profile is
-// the gateway provider, and the model is the upstream model so pricing matches.
 func CollectGateway(agg *usage.Aggregator, logPath string) Status {
 	logPath = usage.ExpandHome(logPath)
 	st := Status{Source: usage.ToolGateway, Path: usage.Tilde(logPath)}

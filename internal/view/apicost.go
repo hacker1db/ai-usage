@@ -11,22 +11,19 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// APIRow is one profile's token usage priced at public API rates, in USD.
 type APIRow struct {
 	Group                   Group
 	Range, Month, PrevMonth float64
-	Projected               float64 // the month in progress at its rate so far; 0 when too early
-	Top                     []Named // biggest models in range
+	Projected               float64
+	Top                     []Named
 }
 
-// APICost is token usage priced at the providers' public pay-as-you-go API rates. Unlike Costs it
-// follows the tab and profile filters, because it comes from the same token rows as the charts.
 type APICost struct {
 	Rows                    []APIRow
 	Range, Month, PrevMonth float64
 	Projected               float64
 	MonthName, PrevName     string
-	PrevPartial             string // "from Oct 8" when history doesn't reach back to the month's start
+	PrevPartial             string
 	Unpriced                []string
 	UnpricedTokens          int64
 	AsOf                    string
@@ -34,12 +31,8 @@ type APICost struct {
 	Sub                     string
 }
 
-// priced reports whether a row's tokens are billed usage worth pricing: the foundry-proxy rows are
-// a cross-check of Codex work-foundry and would count those tokens twice.
 func priced(r history.HourRow) bool { return r.Tool != usage.ToolProxy }
 
-// addRow prices one row: Copilot rows by the AI credits Copilot logged (GitHub's own per-token
-// pricing, which also covers Copilot-only models), everything else from the public price table.
 func addRow(e *pricing.Estimate, r history.HourRow) {
 	if r.Tool == usage.ToolCopilot && r.CopilotAIU > 0 {
 		e.AddCredits(r.CopilotAIU, r.Metrics)
@@ -125,5 +118,4 @@ func (d *Dashboard) buildAPICost(s *snapshot.Snapshot, rows []history.HourRow, f
 	d.APICost = c
 }
 
-// UnpricedList is the unpriced model names for display.
 func (c APICost) UnpricedList() string { return strings.Join(c.Unpriced, ", ") }

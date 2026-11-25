@@ -1,9 +1,3 @@
-// Package gateway is a loopback API gateway: local tools (Caido, scripts, editors) call it with a
-// gateway-issued key in either the OpenAI Chat Completions or the Anthropic Messages format, and it
-// forwards to configured upstream accounts (Azure AI Foundry via Entra, GitHub Models via `gh auth
-// token`, Anthropic or OpenAI API keys, another local proxy), translating between the two formats
-// when the caller and the upstream differ. Every call is logged as a proxylog "request" line so
-// ai-usage can count tokens and estimate cost.
 package gateway
 
 import (
@@ -31,15 +25,13 @@ const (
 	headerGatewayError = "X-Gateway-Error"
 	headerRequestID    = "X-Gateway-Request-Id"
 
-	// maxUpstreamBody bounds a buffered (non-streamed) upstream response.
 	maxUpstreamBody = 64 << 20
-	// maxErrorBody bounds what is read from an upstream error response.
+
 	maxErrorBody    = 1 << 20
 	clientIOTimeout = 30 * time.Second
 	maxErrorMessage = 1024
 )
 
-// Options configures a Gateway. Getenv and Runner are injectable for tests.
 type Options struct {
 	Config    *Config
 	Transport http.RoundTripper
@@ -49,7 +41,6 @@ type Options struct {
 	Runner    token.Runner
 }
 
-// Gateway is the HTTP handler.
 type Gateway struct {
 	cfg       *Config
 	log       *slog.Logger
@@ -65,7 +56,6 @@ type upstream struct {
 	cred credential
 }
 
-// New builds a Gateway from a validated config.
 func New(opts Options) *Gateway {
 	if opts.Logger == nil {
 		opts.Logger = slog.New(slog.DiscardHandler)
@@ -86,7 +76,6 @@ func New(opts Options) *Gateway {
 	return g
 }
 
-// format is the API dialect of the inbound request.
 type format string
 
 const (
@@ -94,9 +83,8 @@ const (
 	formatAnthropic format = kindAnthropic
 )
 
-// call is the per-request state that ends up in the log line.
 type call struct {
-	credentials    []string // Tokens used by this call, including the pre-refresh token.
+	credentials    []string
 	id             string
 	format         format
 	client         string
@@ -193,7 +181,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case route == routeCountTokens && up.cfg.Kind != kindAnthropic:
-		// No OpenAI equivalent; Claude Code only uses this for context budgeting.
+
 		writeJSON(rec, http.StatusOK, map[string]int{"input_tokens": len(body) / 4})
 	case string(c.format) == up.cfg.Kind:
 		g.passthrough(rec, r, c, up, route, doc)
@@ -222,8 +210,6 @@ func formatFor(path string) format {
 	return formatOpenAI
 }
 
-// matchRoute accepts the paths with or without the /v1 prefix, since clients differ on whether the
-// configured base URL already ends in /v1.
 func matchRoute(r *http.Request) (routeID, bool) {
 	p := strings.TrimPrefix(r.URL.Path, "/v1")
 	switch {
@@ -249,8 +235,7 @@ func (g *Gateway) listModels(w http.ResponseWriter, client *Client) {
 		Created     int64  `json:"created"`
 		CreatedAt   string `json:"created_at"`
 	}
-	// One body serves both dialects: OpenAI clients read object/owned_by, Anthropic clients
-	// read type/display_name/has_more.
+
 	data := []entry{}
 	for _, alias := range g.cfg.modelsFor(client) {
 		data = append(data, entry{
@@ -261,8 +246,6 @@ func (g *Gateway) listModels(w http.ResponseWriter, client *Client) {
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data, "has_more": false})
 }
 
-// ---- request body helpers ----
-
 func decodeObject(body []byte) (map[string]json.RawMessage, error) {
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(body, &doc); err != nil || doc == nil {
@@ -271,8 +254,6 @@ func decodeObject(body []byte) (map[string]json.RawMessage, error) {
 	return doc, nil
 }
 
-// modelOf reads the exact top-level "model" key. A key that only matches "model" ignoring case is
-// refused: case-insensitive upstream parsers could read it instead of the checked value.
 func modelOf(doc map[string]json.RawMessage) (string, error) {
 	for k := range doc {
 		if k != "model" && strings.EqualFold(k, "model") {
@@ -296,10 +277,6 @@ func boolField(doc map[string]json.RawMessage, key string) bool {
 	return v
 }
 
-// ---- upstream calls ----
-
-// send posts body to the provider path with the upstream credential, retrying once with a fresh
-// credential when the upstream answers 401.
 func (g *Gateway) send(ctx context.Context, c *call, up *upstream, path string, body []byte, in http.Header) (*http.Response, error) {
 	resp, used, err := g.attempt(ctx, c, up, path, body, in)
 	if err != nil || resp.StatusCode != http.StatusUnauthorized {
@@ -366,7 +343,6 @@ func (g *Gateway) attempt(ctx context.Context, c *call, up *upstream, path strin
 	return resp, tok, nil
 }
 
-// upstreamFailed answers a transport or credential error in the caller's format.
 func (g *Gateway) upstreamFailed(w http.ResponseWriter, r *http.Request, c *call, err error) {
 	switch {
 	case r.Context().Err() != nil:
@@ -386,7 +362,6 @@ func (g *Gateway) upstreamFailed(w http.ResponseWriter, r *http.Request, c *call
 	}
 }
 
-// relayedHeaders are upstream response headers worth passing back: request IDs and rate limits.
 func copyRelayedHeaders(dst, src http.Header) {
 	for k, vs := range src {
 		lk := strings.ToLower(k)
@@ -399,14 +374,11 @@ func copyRelayedHeaders(dst, src http.Header) {
 	}
 }
 
-// ---- passthrough: caller and upstream speak the same format ----
-
 func (g *Gateway) passthrough(w http.ResponseWriter, r *http.Request, c *call, up *upstream, route routeID, doc map[string]json.RawMessage) {
 	doc["model"] = jsonString(c.upstreamModel)
 	wantUsage := true
 	if c.stream && up.cfg.Kind == kindOpenAI {
-		// Ask for the final usage chunk so the call can be costed; hide it again from a client that
-		// did not ask for it.
+
 		var so map[string]json.RawMessage
 		_ = json.Unmarshal(doc["stream_options"], &so)
 		if so == nil {
@@ -451,7 +423,7 @@ func (g *Gateway) passthrough(w http.ResponseWriter, r *http.Request, c *call, u
 			g.fail(w, c, http.StatusBadGateway, "upstream_response_too_large", "upstream response exceeds the gateway limit")
 			return
 		}
-		// Both APIs answer in JSON; never reflect an upstream-chosen type such as text/html.
+
 		w.Header().Set("Content-Type", "application/json")
 		if resp.StatusCode >= 200 && resp.StatusCode <= 299 && route != routeCountTokens {
 			scanUsage(up.cfg.Kind, raw, &c.usage)
@@ -493,8 +465,6 @@ func isUsageOnlyChunk(data []byte) bool {
 	}
 	return json.Unmarshal(data, &chunk) == nil && len(chunk.Choices) == 0 && len(chunk.Usage) > 0 && string(chunk.Usage) != "null"
 }
-
-// ---- translation: Anthropic caller, OpenAI upstream ----
 
 func (g *Gateway) anthropicViaOpenAI(w http.ResponseWriter, r *http.Request, c *call, up *upstream, body []byte) {
 	var in antRequest
@@ -543,8 +513,6 @@ func (g *Gateway) anthropicViaOpenAI(w http.ResponseWriter, r *http.Request, c *
 	c.usage.merge(fromOpenAIUsage(res.Usage))
 	writeJSON(w, http.StatusOK, openAIToAnthropicResponse(&res, c.model))
 }
-
-// ---- translation: OpenAI caller, Anthropic upstream ----
 
 func (g *Gateway) openAIViaAnthropic(w http.ResponseWriter, r *http.Request, c *call, up *upstream, body []byte) {
 	var in oaiRequest
@@ -595,7 +563,6 @@ func (g *Gateway) openAIViaAnthropic(w http.ResponseWriter, r *http.Request, c *
 	writeJSON(w, http.StatusOK, anthropicToOpenAIResponse(&res, c.model))
 }
 
-// relayError re-shapes an upstream error into the caller's format, keeping the status code.
 func (g *Gateway) relayError(w http.ResponseWriter, c *call, resp *http.Response) {
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 	msg := c.safeError(upstreamErrorMessage(raw))
@@ -625,9 +592,6 @@ func upstreamErrorMessage(raw []byte) string {
 	return env.Message
 }
 
-// ---- errors ----
-
-// fail writes a gateway error in the caller's format.
 func (g *Gateway) fail(w http.ResponseWriter, c *call, status int, code, msg string) {
 	w.Header().Set(headerGatewayError, code)
 	if c.format == formatAnthropic {
@@ -676,8 +640,6 @@ func openAIErrorType(status int) string {
 	return "server_error"
 }
 
-// ---- logging ----
-
 func (g *Gateway) logCall(r *http.Request, c *call, rec *recorder, start time.Time) {
 	if r.URL.Path == "/healthz" {
 		return
@@ -711,8 +673,6 @@ func (g *Gateway) logCall(r *http.Request, c *call, rec *recorder, start time.Ti
 	}
 	g.log.Log(r.Context(), level, proxylog.Message, append(attrs, c.usage.logAttrs()...)...)
 }
-
-// ---- plumbing ----
 
 type recorder struct {
 	http.ResponseWriter
@@ -764,7 +724,6 @@ func isEventStream(resp *http.Response) bool {
 	return strings.EqualFold(strings.TrimSpace(ct), "text/event-stream")
 }
 
-// idleBody cancels the upstream request when no bytes arrive within the idle window.
 type idleBody struct {
 	io.ReadCloser
 	idle   time.Duration
@@ -818,7 +777,6 @@ func isTimeout(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
-// clientName keeps the product token of a User-Agent ("Caido/0.50" -> "Caido").
 func clientName(ua string) string {
 	name, _, _ := strings.Cut(strings.TrimSpace(ua), " ")
 	name, _, _ = strings.Cut(name, "/")
@@ -848,8 +806,6 @@ var (
 	anthropicBetaRE    = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,79}$`)
 )
 
-// anthropicBetas keeps the well-formed beta tokens from the caller's Anthropic-Beta headers, so a
-// client cannot smuggle arbitrary text upstream.
 func anthropicBetas(values []string) string {
 	var keep []string
 	for _, tok := range splitHeaderList(values) {
@@ -860,7 +816,6 @@ func anthropicBetas(values []string) string {
 	return strings.Join(keep, ",")
 }
 
-// clipLog bounds every string attribute, including the truncation marker.
 func clipLog(s string) string { return clipString(s, 256) }
 
 func clipString(s string, limit int) string {
@@ -877,7 +832,6 @@ func (c *call) safeError(msg string) string {
 	return clipString(msg, maxErrorMessage)
 }
 
-// Normalize only error events; successful content and usage retain their original wire shape.
 func (c *call) streamError(data []byte) ([]byte, bool) {
 	var env map[string]json.RawMessage
 	if json.Unmarshal(data, &env) != nil || len(env["error"]) == 0 {

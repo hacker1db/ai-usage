@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// testRepo is a throwaway repository isolated from the user's git config, hooks, and signing keys.
 type testRepo struct {
 	t   *testing.T
 	dir string
@@ -65,7 +64,7 @@ func TestMakePlanCreates(t *testing.T) {
 	r.commit("feat: first")
 	r.git("tag", "-a", "-m", "v0.2.0", "v0.2.0")
 	r.git("tag", "not-a-version")
-	r.git("tag", "v9.9.9-rc.1") // pre-release style tags are ignored
+	r.git("tag", "v9.9.9-rc.1")
 	r.commit("fix: a")
 	head := r.commit("feat(web): b")
 
@@ -111,7 +110,7 @@ func TestMakePlanExistingTagIsIdempotent(t *testing.T) {
 	r.commit("feat: first")
 	r.git("tag", "v0.2.0")
 	r.commit("feat: second")
-	r.git("tag", "v0.3.0") // a re-run after the release, or a hand-pushed signed tag
+	r.git("tag", "v0.3.0")
 	for _, force := range []Bump{None, Major} {
 		p := r.plan("HEAD", force)
 		if p.Action != Existing || p.Tag != "v0.3.0" {
@@ -137,7 +136,7 @@ func TestMakePlanUsesNewestReachableTag(t *testing.T) {
 	r.commit("feat: first")
 	r.git("tag", "v0.9.0")
 	r.commit("fix: a")
-	r.git("tag", "v0.10.0") // numeric, not lexical, order
+	r.git("tag", "v0.10.0")
 	r.commit("fix: b")
 	if p := r.plan("HEAD", None); p.Tag != "v0.10.1" || p.Previous != "v0.10.0" {
 		t.Fatalf("plan = %+v", p)

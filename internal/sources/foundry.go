@@ -12,15 +12,10 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// foundryHostRE matches an Azure AI Foundry / OpenAI endpoint host and captures its subdomain.
 var foundryHostRE = regexp.MustCompile(`(?i)https://([a-z0-9][a-z0-9-]{1,62})\.(?:services\.ai\.azure\.com|openai\.azure\.com|cognitiveservices\.azure\.com)`)
 
 var subdomainRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 
-// FoundryEndpoints returns the Azure Foundry endpoint subdomains the local tools are configured to
-// use: ANTHROPIC_FOUNDRY_RESOURCE / ANTHROPIC_FOUNDRY_BASE_URL in each Claude profile's
-// settings.json and the environment, and Azure base_url hosts in Codex's config.toml. Billing uses
-// them to find the matching Azure resources, so nothing about the account is hardcoded.
 func FoundryEndpoints(o Options) []string {
 	seen := map[string]bool{}
 	add := func(resource, baseURL string) {

@@ -1,4 +1,3 @@
-// Package token acquires Entra access tokens by shelling out to the Azure CLI.
 package token
 
 import (
@@ -13,15 +12,13 @@ import (
 	"time"
 )
 
-// ErrLoginRequired means the Azure CLI has no usable session; the fix is `az login`.
 var ErrLoginRequired = errors.New("azure cli login required")
 
-// Runner executes a command and returns its stdout and stderr separately.
 type Runner func(ctx context.Context, name string, args ...string) (stdout, stderr []byte, err error)
 
 type Source interface {
 	Token(ctx context.Context) (string, error)
-	// Invalidate drops the cached token if it is still the one the upstream rejected.
+
 	Invalidate(rejected string)
 }
 
@@ -34,13 +31,12 @@ type AzCLI struct {
 	Run         Runner
 	Now         func() time.Time
 
-	mu        sync.Mutex // guards the fields below; never held while az runs
+	mu        sync.Mutex
 	token     string
 	expiresAt time.Time
 	inflight  *flight
 }
 
-// flight is one shared az invocation. Its result fields are written before done is closed.
 type flight struct {
 	done      chan struct{}
 	token     string
@@ -60,9 +56,6 @@ func NewAzCLI(azPath, scope, tenant string) *AzCLI {
 	}
 }
 
-// Token returns a cached token until it is within RefreshSkew of expiry. Concurrent callers that
-// need a new token share one az invocation, which runs detached from any caller's context and is
-// bounded only by ExecTimeout; each caller stops waiting when its own ctx is done.
 func (a *AzCLI) Token(ctx context.Context) (string, error) {
 	a.mu.Lock()
 	if a.token != "" && a.Now().Add(a.RefreshSkew).Before(a.expiresAt) {
@@ -97,8 +90,6 @@ func (a *AzCLI) fly(ctx context.Context, f *flight) {
 	close(f.done)
 }
 
-// Invalidate drops the cached token when it is the rejected one, so the next Token call re-runs
-// az. A token that has already been replaced is left alone.
 func (a *AzCLI) Invalidate(rejected string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -186,13 +177,8 @@ func summarize(stderr []byte) string {
 	return msg
 }
 
-// execWaitDelay bounds how long ExecRunner waits for output pipes to close after the context is
-// done, in case a descendant outside the killed process group still holds them.
 const execWaitDelay = 3 * time.Second
 
-// ExecRunner runs the command in its own process group and, when ctx is done, kills the whole
-// group. The Homebrew az is a bash wrapper around python; killing only bash would leave python
-// holding stdout and stderr, and Run would block until python exited on its own.
 func ExecRunner(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	killProcessGroupOnCancel(cmd)

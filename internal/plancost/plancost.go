@@ -1,6 +1,3 @@
-// Package plancost totals the token usage and estimated cost of an explicit set of sessions, so a
-// plan (or any other unit of work) can record what it cost. Sessions are linked by hand; nothing
-// here guesses which sessions belong together.
 package plancost
 
 import (
@@ -21,30 +18,23 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// Version is the schema version of Summary. Bump it on any incompatible JSON change; plan-manager
-// refuses versions it does not know.
 const Version = 1
 
-// DefaultPricingPath is where Load looks when no -pricing flag is given.
 const DefaultPricingPath = "~/.config/ai-usage/pricing.json"
 
-// Price is USD per million tokens. Every field is required: a typo or a missing rate must fail
-// loudly instead of pricing those tokens at zero.
 type Price struct {
-	Input       float64 `json:"input"`        // input that was neither a cache read nor a cache write
-	CachedInput float64 `json:"cached_input"` // cache reads
-	CacheWrite  float64 `json:"cache_write"`  // cache writes (creation)
-	Output      float64 `json:"output"`       // output, including reasoning
+	Input       float64 `json:"input"`
+	CachedInput float64 `json:"cached_input"`
+	CacheWrite  float64 `json:"cache_write"`
+	Output      float64 `json:"output"`
 }
 
-// Pricing maps model names to prices. A key ending in "*" matches any model with that prefix;
-// an exact key wins over a prefix, and the longest prefix wins among prefixes.
 type Pricing struct {
-	Path   string // as given, for display
-	SHA256 string // of the file content, so a saved summary says which prices produced it
-	Loaded bool   // false when the file does not exist
+	Path   string
+	SHA256 string
+	Loaded bool
 	exact  map[string]Price
-	prefix []prefixPrice // longest first
+	prefix []prefixPrice
 }
 
 type prefixPrice struct {
@@ -58,8 +48,6 @@ type pricingFile struct {
 	Models   map[string]json.RawMessage `json:"models"`
 }
 
-// LoadPricing reads a pricing file. A missing file is not an error: every model is then unpriced
-// and the summary is marked incomplete. Anything malformed is an error.
 func LoadPricing(path string) (*Pricing, error) {
 	p := &Pricing{Path: path, exact: map[string]Price{}}
 	data, err := os.ReadFile(usage.ExpandHome(path))
@@ -139,7 +127,6 @@ func decodePrice(raw json.RawMessage) (Price, error) {
 	return p, nil
 }
 
-// Lookup returns the price for a model.
 func (p *Pricing) Lookup(model string) (Price, bool) {
 	if p == nil {
 		return Price{}, false
@@ -155,23 +142,20 @@ func (p *Pricing) Lookup(model string) (Price, bool) {
 	return Price{}, false
 }
 
-// Cost prices m. Input includes cache reads and writes, so fresh input is what is left after both.
 func (p Price) Cost(m usage.Metrics) float64 {
 	fresh := max(m.Input-m.Cached-m.CacheWrite, 0)
 	return (float64(fresh)*p.Input + float64(m.Cached)*p.CachedInput +
 		float64(m.CacheWrite)*p.CacheWrite + float64(m.Output)*p.Output) / 1e6
 }
 
-// ModelCost is one model's usage and cost. CostUSD is null when the model has no price.
 type ModelCost struct {
 	Model string `json:"model"`
 	usage.Metrics
 	CostUSD *float64 `json:"cost_usd"`
 }
 
-// SessionCost is one linked session.
 type SessionCost struct {
-	Key     string        `json:"key"` // tool|profile|id
+	Key     string        `json:"key"`
 	Tool    string        `json:"tool"`
 	Profile string        `json:"profile"`
 	ID      string        `json:"id"`
@@ -179,30 +163,26 @@ type SessionCost struct {
 	First   string        `json:"first"`
 	Last    string        `json:"last"`
 	Totals  usage.Metrics `json:"totals"`
-	// CostUSD is null unless every model in the session is priced; PricedCostUSD is the priced part.
+
 	CostUSD       *float64    `json:"cost_usd"`
 	PricedCostUSD float64     `json:"priced_cost_usd"`
 	Models        []ModelCost `json:"models"`
 }
 
-// PricingInfo says which prices produced a summary.
 type PricingInfo struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256,omitempty"`
 	Loaded bool   `json:"loaded"`
 }
 
-// Summary is what `ai-usage plan-cost -json` prints.
 type Summary struct {
 	Version   int    `json:"version"`
 	Generated string `json:"generated"`
 	Currency  string `json:"currency"`
-	// Complete is true only when every requested session was found, every model was priced, and
-	// every source read cleanly. Anything else is reported in the fields below, never as zero.
+
 	Complete bool          `json:"complete"`
 	Totals   usage.Metrics `json:"totals"`
-	// EstimatedCostUSD is null unless the summary is Complete. PricedCostUSD is the sum of the
-	// priced models found, so an incomplete summary still shows a lower bound.
+
 	EstimatedCostUSD *float64      `json:"estimated_cost_usd"`
 	PricedCostUSD    float64       `json:"priced_cost_usd"`
 	Models           []ModelCost   `json:"models"`
@@ -213,18 +193,13 @@ type Summary struct {
 	Pricing          PricingInfo   `json:"pricing"`
 }
 
-// SessionSource is what Compute needs from an aggregator.
 type SessionSource interface {
 	SessionRows(withDetail bool) []usage.SessionRow
 	SessionModels(k usage.SessionKey) map[string]usage.Metrics
 }
 
-// ErrAmbiguous is returned when a bare session id matches sessions in more than one tool/profile.
 var ErrAmbiguous = errors.New("ambiguous session id")
 
-// Resolve turns requested session references into keys. A reference is "tool|profile|id" or a
-// bare id; a bare id must match exactly one session. Unmatched references are returned as
-// missing (normalized, in request order); duplicates are dropped.
 func Resolve(rows []usage.SessionRow, refs []string) (keys []usage.SessionKey, missing []string, err error) {
 	byKey := map[usage.SessionKey]bool{}
 	byID := map[string][]usage.SessionKey{}
@@ -282,8 +257,6 @@ func Resolve(rows []usage.SessionRow, refs []string) (keys []usage.SessionKey, m
 	return keys, missing, nil
 }
 
-// Compute totals the requested sessions. sourceErrors are source statuses that were neither "ok"
-// nor "not found"; they make the summary incomplete because a failed read can hide usage.
 func Compute(src SessionSource, refs []string, pricing *Pricing, sourceErrors []string, now time.Time) (Summary, error) {
 	rows := src.SessionRows(false)
 	keys, missing, err := Resolve(rows, refs)
@@ -302,8 +275,7 @@ func Compute(src SessionSource, refs []string, pricing *Pricing, sourceErrors []
 	if pricing != nil {
 		s.Pricing = PricingInfo{Path: pricing.Path, SHA256: pricing.SHA256, Loaded: pricing.Loaded}
 	}
-	// Model totals sum the per-session costs instead of repricing the summed counters: fresh input
-	// is clamped at zero per session, so repricing an aggregate could disagree with the total.
+
 	allModels := map[string]*usage.Metrics{}
 	modelCost := map[string]float64{}
 	unpriced := map[string]bool{}
@@ -371,7 +343,6 @@ func sortModels(m []ModelCost) {
 	})
 }
 
-// round keeps micro-dollar precision so JSON doesn't carry float noise.
 func round(v float64) float64 { return math.Round(v*1e6) / 1e6 }
 
 func ptr(v float64) *float64 { return &v }

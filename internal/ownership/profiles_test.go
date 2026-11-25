@@ -13,17 +13,17 @@ func TestMatchProfile(t *testing.T) {
 	}{
 		{"claude-code:personal", "claude-code", "personal", true},
 		{"claude-code:personal", "codex", "personal", false},
-		{"personal", "codex", "personal", true}, // bare profile: any tool
+		{"personal", "codex", "personal", true},
 		{"personal", "codex", "personal-chatgpt", false},
 		{"personal*", "codex", "personal-chatgpt", true},
 		{"*:work-*", "codex", "work-foundry", true},
 		{"*:work-*", "claude-code", "personal", false},
 		{"claude-code:*", "claude-code", "legacy", true},
 		{"claude-code:*", "codex", "legacy", false},
-		{"Claude-Code:PERSONAL", "claude-code", "personal", true}, // case-insensitive both ways
+		{"Claude-Code:PERSONAL", "claude-code", "personal", true},
 		{"work-foundry", "CODEX", "Work-Foundry", true},
 		{"*", "copilot", "github-copilot", true},
-		{"[", "x", "[", false}, // bad pattern never matches
+		{"[", "x", "[", false},
 	}
 	for _, c := range cases {
 		if got := MatchProfile(c.pattern, c.tool, c.profile); got != c.want {

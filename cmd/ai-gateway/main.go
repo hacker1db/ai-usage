@@ -1,6 +1,3 @@
-// Command ai-gateway is a loopback API gateway that gives local tools (Caido, scripts, editors) one
-// endpoint and a gateway-issued key, and forwards their OpenAI- or Anthropic-format calls to the
-// upstream accounts in its config. See docs/ai-gateway.md.
 package main
 
 import (
@@ -58,8 +55,6 @@ func main() {
 	}
 }
 
-// keygen prints a new client key and the config entry that accepts it. The key is shown once and
-// only its hash is stored.
 func keygen(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("keygen", flag.ContinueOnError)
 	name := fs.String("name", "", "client name, for example caido (required)")
@@ -98,7 +93,6 @@ func keygen(args []string, out io.Writer) error {
 	return nil
 }
 
-// check validates a config file and reports, per provider, whether its credential resolves.
 func check(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	cfgPath := fs.String("config", envOr("AI_GATEWAY_CONFIG", defaultConfig), "config file")
@@ -173,8 +167,7 @@ func serve(cfgPath string) error {
 	if err != nil {
 		return err
 	}
-	// The bound address goes to stdout so a supervisor (or the integration test) can find a
-	// ":0" port.
+
 	fmt.Printf("ai-gateway listening on http://%s\n", ln.Addr())
 	logger.Info("listening", "addr", ln.Addr().String(), "providers", len(cfg.Providers), "models", len(cfg.Models), "version", version)
 

@@ -13,10 +13,8 @@ import (
 	"ai-usage/internal/view"
 )
 
-const rowTotal = 9800 // Total per hourly row in profileFixture
+const rowTotal = 9800
 
-// profileFixture has 72 hourly rows each for claude-code:personal, codex:work-foundry,
-// codex:personal-chatgpt, and a proxy series, one session per non-proxy series, and two sets.
 func profileFixture(now time.Time) *snapshot.Snapshot {
 	var rows []history.HourRow
 	for h := 0; h < 72; h++ {
@@ -64,7 +62,7 @@ func TestProfileOptions(t *testing.T) {
 	now := time.Now()
 	d := view.Build(profileFixture(now), view.Defaults, now)
 	got := ids(d.Profiles, func(o view.ProfileOpt) string { return o.ID })
-	// All first, then sets in config order, then single series with data in palette order (no proxy).
+
 	want := []string{"", "mine", "claude-only", "claude-code:personal", "codex:personal-chatgpt", "codex:work-foundry"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("profile IDs = %v; want %v", got, want)
@@ -116,7 +114,7 @@ func TestProfileSetSelection(t *testing.T) {
 	if d.TabCounts["all"] != 2 || d.TabCounts["claude"] != 1 || d.TabCounts["codex"] != 1 || d.TabCounts["foundry"] != 0 {
 		t.Errorf("tab counts = %v", d.TabCounts)
 	}
-	// Option values don't depend on the selection.
+
 	if d.Profiles[0].Value != 3*72*rowTotal {
 		t.Errorf("all value under a selection = %v", d.Profiles[0].Value)
 	}
@@ -198,7 +196,6 @@ func TestProfileLinkRoundTrip(t *testing.T) {
 	}
 }
 
-// otherRows adds two unslotted series (both fall into the Other group) to a snapshot.
 func otherRows(s *snapshot.Snapshot, now time.Time) {
 	for _, p := range []string{"alpha", "beta"} {
 		s.Rows = append(s.Rows, history.FromUsage(usage.Row{

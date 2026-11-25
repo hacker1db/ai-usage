@@ -9,20 +9,18 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// Options locate each tool's logs.
 type Options struct {
-	Claude     []ClaudeDir // nil means DefaultClaudeDirs()
+	Claude     []ClaudeDir
 	CodexHome  string
-	CodexExtra []string // more Codex homes (separate CODEX_HOME profiles); DefaultOptions finds them
+	CodexExtra []string
 	CopilotDB  string
-	// AntigravityHome is the Antigravity CLI data dir (conversations/*.db).
+
 	AntigravityHome string
 	ProxyLog        string
 	GatewayLog      string
 	M365Store       string // written by `ai-usage m365-sync`
 }
 
-// DefaultOptions returns the standard macOS locations (CODEX_HOME is honored).
 func DefaultOptions() Options {
 	codex := os.Getenv("CODEX_HOME")
 	if codex == "" {
@@ -39,8 +37,6 @@ func DefaultOptions() Options {
 	}
 }
 
-// DefaultCodexExtras returns the other Codex homes (~/.codex-* and ~/.codex_*, as used for a
-// separate CODEX_HOME per provider) that hold sessions, excluding primary.
 func DefaultCodexExtras(primary string) []string {
 	var out []string
 	for _, pat := range []string{".codex-*", ".codex_*"} {
@@ -55,7 +51,6 @@ func DefaultCodexExtras(primary string) []string {
 	return dedupeHomes(append([]string{primary}, out...))[1:]
 }
 
-// CodexHomes returns the primary Codex home and the extra ones, without duplicates.
 func (o Options) CodexHomes() []string {
 	if o.CodexHome == "" {
 		return dedupeHomes(o.CodexExtra)
@@ -63,7 +58,6 @@ func (o Options) CodexHomes() []string {
 	return dedupeHomes(append([]string{o.CodexHome}, o.CodexExtra...))
 }
 
-// dedupeHomes drops empty paths and later paths that resolve to an earlier one.
 func dedupeHomes(paths []string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -83,18 +77,15 @@ func dedupeHomes(paths []string) []string {
 	return out
 }
 
-// Caches are reused across collections by long-running commands.
 type Caches struct {
 	Claude *FileCache[ClaudeFile]
 	Codex  *FileCache[CodexFile]
 }
 
-// NewCaches returns empty caches.
 func NewCaches() *Caches {
 	return &Caches{Claude: NewFileCache[ClaudeFile](), Codex: NewFileCache[CodexFile]()}
 }
 
-// CollectAll reads every source into agg and returns their statuses and cache stats.
 func CollectAll(agg *usage.Aggregator, o Options, c *Caches) ([]Status, Stats) {
 	if c == nil {
 		c = NewCaches()
@@ -124,7 +115,6 @@ func CollectAll(agg *usage.Aggregator, o Options, c *Caches) ([]Status, Stats) {
 	return status, Stats{Hits: a.Hits + b.Hits, Misses: a.Misses + b.Misses}
 }
 
-// CopilotUsed reports whether Copilot CLI has left a session store on this machine.
 func CopilotUsed(o Options) bool {
 	if o.CopilotDB == "" {
 		return false

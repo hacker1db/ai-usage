@@ -19,13 +19,10 @@ import (
 
 const hour = time.Hour
 
-// SessionLimit caps the session list.
 const SessionLimit = 150
 
-// Stat is a labeled figure.
 type Stat struct{ Label, Value string }
 
-// Hero is the headline: the range total plus today, burn, period-to-date, and projection.
 type Hero struct {
 	Title string
 	Value float64
@@ -33,47 +30,41 @@ type Hero struct {
 	Stats []Stat
 }
 
-// Cumulative is usage summed through the budget period (or month) with a projection to its end
-// at the trailing 7-day average rate.
 type Cumulative struct {
 	Start, End time.Time
 	Now        time.Time
-	Hours      int       // hours in the period
-	ByHour     []float64 // per-hour usage, len Hours
-	Cum        []float64 // running total through each elapsed hour, len elapsed
-	Run        float64   // total so far
-	ProjRate   float64   // per hour
-	ProjEnd    float64   // projected total at End
-	Budget     float64   // 0 when no budget applies
+	Hours      int
+	ByHour     []float64
+	Cum        []float64
+	Run        float64
+	ProjRate   float64
+	ProjEnd    float64
+	Budget     float64
 	YMax       float64
 	Unit       string
 	Desc       string
 }
 
-// Series is one group's values per bucket.
 type Series struct {
 	Group  Group
 	Values []float64
 	Total  float64
 }
 
-// Stacked is usage per time bucket, stacked by group.
 type Stacked struct {
 	Start       time.Time
 	N           int
 	BucketHours int
-	Series      []Series // groups with usage, fixed order
+	Series      []Series
 	Totals      []float64
 	YMax        float64
 	Sub         string
 }
 
-// BucketStart returns bucket i's start time.
 func (s Stacked) BucketStart(i int) time.Time {
 	return s.Start.Add(time.Duration(i*s.BucketHours) * hour)
 }
 
-// BucketLabel is the axis label for bucket i.
 func (s Stacked) BucketLabel(i int) string {
 	at := s.BucketStart(i)
 	switch {
@@ -85,7 +76,6 @@ func (s Stacked) BucketLabel(i int) string {
 	return HourLabel(at)
 }
 
-// BucketTitle is the tooltip heading for bucket i.
 func (s Stacked) BucketTitle(i int) string {
 	at := s.BucketStart(i)
 	if s.BucketHours == 24 {
@@ -94,7 +84,6 @@ func (s Stacked) BucketTitle(i int) string {
 	return HourFull(at) + " – " + HourLabel(at.Add(time.Duration(s.BucketHours)*hour))
 }
 
-// Level is a status: good, warning, serious, critical. Never a series color.
 type Level string
 
 const (
@@ -104,7 +93,6 @@ const (
 	Critical Level = "critical"
 )
 
-// Icon is the status glyph that accompanies its color.
 func (l Level) Icon() string {
 	switch l {
 	case Critical:
@@ -117,7 +105,6 @@ func (l Level) Icon() string {
 	return "✓"
 }
 
-// BudgetBar is a profile's budget meter.
 type BudgetBar struct {
 	Period    budget.Period
 	Metric    budget.Metric
@@ -129,10 +116,8 @@ type BudgetBar struct {
 	Status    string
 }
 
-// Pct is used/tokens as 0-100.
 func (b BudgetBar) Pct() float64 { return b.Used / b.Tokens * 100 }
 
-// Card is one profile's summary.
 type Card struct {
 	Group     Group
 	Total     float64
@@ -144,13 +129,11 @@ type Card struct {
 	Budget    *BudgetBar
 }
 
-// Named is a labeled value.
 type Named struct {
 	Name  string
 	Value float64
 }
 
-// Heatmap is usage by weekday (Mon-Sun) and hour of day, showing when work happens.
 type Heatmap struct {
 	Cells [7][24]float64
 	Max   float64
@@ -158,19 +141,15 @@ type Heatmap struct {
 	Peak  string
 }
 
-// Weekdays labels Heatmap rows.
 var Weekdays = [7]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 
-// Mix is a group's token composition: cache reads, fresh input, and output (cost order).
 type Mix struct {
 	Group                 Group
 	Cached, Fresh, Output float64
 }
 
-// Total is the composition's whole.
 func (m Mix) Total() float64 { return m.Cached + m.Fresh + m.Output }
 
-// CacheHit is the share of input served from cache.
 func (m Mix) CacheHit() float64 {
 	if in := m.Cached + m.Fresh; in > 0 {
 		return m.Cached / in
@@ -178,44 +157,39 @@ func (m Mix) CacheHit() float64 {
 	return math.NaN()
 }
 
-// SessionView is a session row decorated for display.
 type SessionView struct {
 	usage.SessionRow
 	Group     Group
 	Value     float64
-	Share     float64 // of the tab's range total
+	Share     float64
 	Last      time.Time
-	Workstrm  string // ai-work-report theme, if classified
+	Workstrm  string
 	Basis     string
-	SrcLabel  string // "first prompt" when the title is the first prompt
+	SrcLabel  string
 	SearchKey string
 }
 
-// Project is usage by repository, split by group.
 type Project struct {
 	Name, Path string
-	Class      string // ownership label with the most usage
-	Owner      string // repository owner, when known
+	Class      string
+	Owner      string
 	Total      float64
-	Active     float64 // minutes
+	Active     float64
 	Sessions   int
-	Parts      []Named // by group key in fixed order
+	Parts      []Named
 }
 
-// OwnRow is one ownership label's usage in range.
 type OwnRow struct {
 	Label    string
 	Value    float64
-	Share    float64 // of all sessions' value in the tab and range
+	Share    float64
 	Sessions int
 	Projects int
-	Active   float64 // minutes
+	Active   float64
 }
 
-// Ownership is usage split by repository ownership (personal, work, ...). It is computed from
-// sessions, so it covers the Work section; the hourly charts above aren't split by repository.
 type Ownership struct {
-	Rows    []OwnRow // every configured label, in config order
+	Rows    []OwnRow
 	Total   float64
 	Source  string
 	Auto    bool
@@ -223,7 +197,6 @@ type Ownership struct {
 	Warning string
 }
 
-// ModelRow is a profile/model pair's counters in range, with their cost at public API prices.
 type ModelRow struct {
 	Group Group
 	Model string
@@ -232,17 +205,15 @@ type ModelRow struct {
 	Priced bool
 }
 
-// Theme is a workstream row.
 type Theme struct {
 	Name, Desc                   string
 	Sessions                     int
 	Value, Active, Manual, Saved float64
 }
 
-// Workstreams is the ai-work-report overlay.
 type Workstreams struct {
 	Available  bool
-	Classified string // when classified
+	Classified string
 	Matched    int
 	InRange    int
 	Title      string
@@ -254,13 +225,11 @@ type Workstreams struct {
 	Dir        string
 }
 
-// DayPair is the proxy cross-check for one day.
 type DayPair struct {
 	Day          time.Time
 	Proxy, Codex float64
 }
 
-// Sources is collector status plus the foundry-entra-proxy cross-check.
 type Sources struct {
 	Status       []StatusRow
 	ProxyTotal   float64
@@ -271,14 +240,12 @@ type Sources struct {
 	Warnings     []string
 }
 
-// StatusRow is one collector's status with its level.
 type StatusRow struct {
 	Source, Path, Label string
 	Level               Level
 	Requests            int
 }
 
-// Dashboard is every chart model for one view.
 type Dashboard struct {
 	Filters     Filters
 	Tab         Tab
@@ -310,23 +277,21 @@ type Dashboard struct {
 	APICost     APICost
 	Foot        []string
 	Empty       bool
-	Profiles    []ProfileOpt // filter choices: configured sets, then single profiles with data
-	Profile     ProfileOpt   // the selection; ID "" = all profiles
-	ProfileHint string       // how to configure profile sets, shown when none are configured
+	Profiles    []ProfileOpt
+	Profile     ProfileOpt
+	ProfileHint string
 
-	match func(tool, profile string) bool // tab and profile filters combined
+	match func(tool, profile string) bool
 }
 
-// ProfileOpt is one profile filter choice: a named set from projects.yaml or a single series.
 type ProfileOpt struct {
 	ID, Label string
-	Set       bool    // a configured profiles: set
-	Members   []Group // series with data the choice covers, fixed order
-	Value     float64 // the metric in range, within the current tab
+	Set       bool
+	Members   []Group
+	Value     float64
 	patterns  []string
 }
 
-// Match reports whether a tool/profile pair passes the filter.
 func (o ProfileOpt) Match(tool, profile string) bool {
 	switch {
 	case o.ID == "":
@@ -337,7 +302,6 @@ func (o ProfileOpt) Match(tool, profile string) bool {
 	return GroupOf(tool, profile).Key == o.ID
 }
 
-// Slot is the color slot for a single-profile choice (sets have none).
 func (o ProfileOpt) Slot() int {
 	if o.Set || len(o.Members) != 1 {
 		return -1
@@ -345,7 +309,6 @@ func (o ProfileOpt) Slot() int {
 	return o.Members[0].Slot
 }
 
-// apiCost prices rows since from at public API rates (unknown models count as 0).
 func apiCost(rows []history.HourRow, from time.Time) float64 {
 	var e pricing.Estimate
 	for _, r := range rows {
@@ -374,7 +337,6 @@ func sumSince(rows []history.HourRow, get func(history.HourRow) float64, from, t
 	return s
 }
 
-// rate is the hourly rate over the trailing window; the current partial hour counts toward it.
 func rate(rows []history.HourRow, get func(history.HourRow) float64, now time.Time, hours int) float64 {
 	return sumSince(rows, get, floorHour(now).Add(-time.Duration(hours-1)*hour), time.Time{}) / float64(hours)
 }
@@ -383,7 +345,6 @@ func metricByID(id budget.Metric) Metric {
 	return find(Metrics, string(id), func(m Metric) Option { return m.Option })
 }
 
-// Build computes the dashboard for a snapshot, filters, and the current time.
 func Build(s *snapshot.Snapshot, f Filters, now time.Time) Dashboard {
 	f = f.Normalize()
 	d := Dashboard{Filters: f, Tab: f.TabOf(), Metric: f.MetricOf(), Range: f.RangeOf(), Burn: f.BurnOf(),
@@ -441,12 +402,9 @@ func Build(s *snapshot.Snapshot, f Filters, now time.Time) Dashboard {
 
 func itoa(n int) string { return Exact(float64(n)) }
 
-// buildProfiles lists the profile filter choices and resolves the selection. Sets come from
-// projects.yaml's profiles: key in config order; single profiles follow in palette order, only
-// those with data. Values are the metric in range within the current tab.
 func (d *Dashboard) buildProfiles(s *snapshot.Snapshot, from time.Time) {
 	value := map[string]float64{}
-	pairs := map[string][][2]string{} // every tool/profile pair per series with data, to test set patterns
+	pairs := map[string][][2]string{}
 	for _, r := range s.Rows {
 		if r.Tool == usage.ToolProxy {
 			continue
@@ -473,7 +431,7 @@ func (d *Dashboard) buildProfiles(s *snapshot.Snapshot, from time.Time) {
 	for _, ps := range s.Meta.Ownership.Profiles {
 		setNames[ps.Name] = true
 		o := ProfileOpt{ID: ps.Name, Label: ps.Label, Set: true, patterns: ps.Patterns}
-		// Sum per row, not per series: "Other" can hold pairs a set only partly matches.
+
 		for _, r := range s.Rows {
 			if r.Tool != usage.ToolProxy && ps.Match(r.Tool, r.Profile) && d.Tab.Match(r.Tool, r.Profile) && !r.T.Before(from) {
 				o.Value += d.Metric.Row(r)
@@ -487,7 +445,7 @@ func (d *Dashboard) buildProfiles(s *snapshot.Snapshot, from time.Time) {
 		d.Profiles = append(d.Profiles, o)
 	}
 	for _, g := range order {
-		// Set names can't contain ":", so only the "other" key can collide; the set wins.
+
 		if have(g.Key) && !setNames[g.Key] {
 			d.Profiles = append(d.Profiles, ProfileOpt{ID: g.Key, Label: g.Label, Members: []Group{g}, Value: value[g.Key]})
 		}
@@ -505,7 +463,6 @@ func (d *Dashboard) buildProfiles(s *snapshot.Snapshot, from time.Time) {
 	}
 }
 
-// tabBudget sums budgets only when every group in the tab has one with the same period and metric.
 func tabBudget(s *snapshot.Snapshot, keys []string) *budget.Budget {
 	if len(keys) == 0 {
 		return nil
@@ -585,7 +542,6 @@ func (d *Dashboard) buildHero(s *snapshot.Snapshot, rows []history.HourRow, keys
 			Stat{"Budget empty", empty})
 	}
 
-	// cumulative curve through the period
 	hours := int(math.Ceil(end.Sub(start).Hours()))
 	c := Cumulative{Start: start, End: end, Now: now, Hours: hours, ByHour: make([]float64, hours), ProjRate: projRate, Unit: unit}
 	for _, r := range rows {
@@ -617,7 +573,7 @@ func (d *Dashboard) buildStack(rows []history.HourRow) {
 	case r.Bucket == 24:
 		end = startOfDay(now).Add(24 * hour)
 	case r.Bucket > 1:
-		// align multi-hour buckets to local midnight so labels read naturally
+
 		sod := startOfDay(now)
 		end = sod.Add(time.Duration(math.Ceil(float64(now.Sub(sod))/float64(bh))) * bh)
 	}
@@ -749,7 +705,7 @@ func (d *Dashboard) buildHeat(rows []history.HourRow) {
 		if r.T.Before(from) {
 			continue
 		}
-		wd := (int(r.T.Weekday()) + 6) % 7 // Monday first
+		wd := (int(r.T.Weekday()) + 6) % 7
 		h.Cells[wd][r.T.Hour()] += d.Metric.Row(r)
 	}
 	pw, ph := 0, 0
@@ -881,8 +837,6 @@ func (d *Dashboard) buildTop(sessions []SessionView, rows []history.HourRow, fro
 	}
 }
 
-// buildOwnership totals sessions per ownership label and returns the sessions the Work section
-// shows: all of them, or only the selected label's.
 func (d *Dashboard) buildOwnership(s *snapshot.Snapshot, sessions []SessionView) []SessionView {
 	o := s.Meta.Ownership
 	d.Ownership = Ownership{Source: o.Source, Auto: o.Auto, Default: o.Default, Warning: o.Warning}
@@ -901,7 +855,7 @@ func (d *Dashboard) buildOwnership(s *snapshot.Snapshot, sessions []SessionView)
 	projects := map[string]map[string]bool{}
 	for _, x := range sessions {
 		if x.Class == "" {
-			continue // a snapshot from before ownership existed
+			continue
 		}
 		r := &d.Ownership.Rows[add(x.Class)]
 		r.Value += x.Value
@@ -955,7 +909,7 @@ func (d *Dashboard) buildProjects(sessions []SessionView) {
 			p.Owner = x.Owner
 		}
 		if x.Class != "" {
-			classes[name][x.Class] += x.Value + 1e-9 // + epsilon so zero-value sessions still count
+			classes[name][x.Class] += x.Value + 1e-9
 		}
 		p.Total += x.Value
 		p.Active += float64(x.ActiveMin)
@@ -1004,7 +958,7 @@ func (d *Dashboard) buildProjects(sessions []SessionView) {
 	for _, p := range list {
 		p.Parts = split(parts[p.Name])
 		best := -1.0
-		for _, r := range d.Ownership.Rows { // config order breaks ties
+		for _, r := range d.Ownership.Rows {
 			if v, ok := classes[p.Name][r.Label]; ok && v > best {
 				p.Class, best = r.Label, v
 			}
@@ -1163,7 +1117,7 @@ func (d *Dashboard) buildSources(s *snapshot.Snapshot, from time.Time) {
 				src.CodexFoundry += float64(r.Total)
 			}
 		}
-		// index by calendar day, which stays right across DST changes
+
 		if i := daysBetween(first, r.T); i >= 0 && i < days {
 			if isProxy {
 				daily[i].Proxy += float64(r.Total)
@@ -1203,7 +1157,6 @@ func (d *Dashboard) buildSources(s *snapshot.Snapshot, from time.Time) {
 	d.Sources = src
 }
 
-// daysBetween counts calendar days from the local midnight first to t's local date.
 func daysBetween(first, t time.Time) int {
 	y, m, d := t.Date()
 	day := time.Date(y, m, d, 0, 0, 0, 0, first.Location())

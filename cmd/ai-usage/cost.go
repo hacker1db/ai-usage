@@ -44,7 +44,7 @@ func runCost(args []string) error {
 			}
 		}
 		if *subscription == "" && len(ids) == 0 {
-			// Find the Foundry resource the local tools use, wherever its subscription is.
+
 			r, err = billing.AzureEndpoints(ctx, billing.Command, sources.FoundryEndpoints(sources.DefaultOptions()), *month)
 		} else {
 			r, err = billing.Azure(ctx, billing.Command, *subscription, ids, *month)

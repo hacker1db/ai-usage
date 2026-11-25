@@ -32,7 +32,7 @@ func TestClaudeDedupeAndSkips(t *testing.T) {
 	write(t, filepath.Join(root, "projects", "p", "s1.jsonl"),
 		`{"type":"user","sessionId":"s1","timestamp":"`+ts+`","message":{"content":"fix the token=abc123 bug"}}`,
 		asst("m1", "r1", "claude-x", u),
-		asst("m1", "r1", "claude-x", u), // streamed duplicate of the same message
+		asst("m1", "r1", "claude-x", u),
 		asst("m2", "r2", "<synthetic>", u),
 		asst("m3", "r3", "claude-x", `{}`),
 		`not json`,
@@ -54,7 +54,7 @@ func TestClaudeDedupeAndSkips(t *testing.T) {
 	if got := s[0].Detail.Prompts; len(got) != 1 || strings.Contains(got[0], "abc123") {
 		t.Errorf("prompt not captured or not redacted: %q", got)
 	}
-	// Every assistant line in this fixture carries the Edit block (real streamed lines carry one block each).
+
 	if f := s[0].Detail.Files; len(f) != 1 || f[0].Name != "/tmp/x/a.go" || f[0].N != 4 {
 		t.Errorf("files = %+v", f)
 	}
@@ -70,7 +70,7 @@ func TestCodexCumulativeTokenCountsAreDiffed(t *testing.T) {
 	write(t, filepath.Join(root, "sessions", "2026", "r.jsonl"),
 		`{"type":"session_meta","timestamp":"`+ts+`","payload":{"id":"sess","model_provider":"foundry","model":"gpt-x"}}`,
 		tc(110, 100, 10),
-		tc(110, 100, 10), // duplicate event: no new usage
+		tc(110, 100, 10),
 		tc(160, 140, 20),
 	)
 	agg := usage.NewAggregator(time.Now().Add(-time.Hour), usage.Daily)

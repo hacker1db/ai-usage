@@ -53,7 +53,7 @@ func runServe(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go c.Run(ctx) // first collection runs in the background so the page answers right away
+	go c.Run(ctx)
 
 	ln, err := net.Listen("tcp", net.JoinHostPort(*host, strconv.Itoa(*port)))
 	if err != nil {
@@ -85,7 +85,6 @@ func runServe(args []string) error {
 	return srv.Shutdown(shutdown)
 }
 
-// openBrowser hands url to the platform's default URL handler without waiting for it.
 func openBrowser(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -99,12 +98,10 @@ func openBrowser(url string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	go func() { _ = cmd.Wait() }() // reap the helper process
+	go func() { _ = cmd.Wait() }()
 	return nil
 }
 
-// isTerminal reports whether f is an interactive terminal, so redirected or
-// service runs don't try to launch a browser.
 func isTerminal(f *os.File) bool {
 	fi, err := f.Stat()
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0

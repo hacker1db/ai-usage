@@ -16,9 +16,6 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// runM365Sync fetches the signed-in user's Microsoft 365 Copilot daily usage from the Graph usage
-// report and merges it into the local store the dashboard reads. Run it daily (the report covers
-// only its latest eight days); history older than that is kept from earlier syncs.
 func runM365Sync(args []string) error {
 	fs := flag.NewFlagSet("m365-sync", flag.ContinueOnError)
 	store := fs.String("store", usage.Tilde(paths.M365Store()), "store file to update")
@@ -71,5 +68,5 @@ func runM365Sync(args []string) error {
 	}
 	fmt.Fprintf(os.Stderr, "m365-sync: %d days, %d Copilot actions for %s -> %s (%d days stored)\n",
 		len(days), actions, *upn, usage.Tilde(path), len(s.Days))
-	return err // a partial sync is saved but still reported
+	return err
 }

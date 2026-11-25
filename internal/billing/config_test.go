@@ -50,7 +50,7 @@ func TestAutoAccounts(t *testing.T) {
 		got[1].Provider != "copilot" || got[1].Scope != "users" || got[1].Mode != "ai_credit" {
 		t.Fatalf("%+v", got)
 	}
-	// No Foundry endpoint, no az, or no Copilot use: that account is not added.
+
 	if got := AutoAccounts(nil, false, all); len(got) != 0 {
 		t.Fatalf("%+v", got)
 	}

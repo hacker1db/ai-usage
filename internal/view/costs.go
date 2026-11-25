@@ -13,16 +13,13 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// Amount is money in one currency. Amounts in different currencies are never added.
 type Amount struct {
 	Currency string
 	Value    float64
 }
 
-// String formats the amount: $12.34 for USD, otherwise 12.34 EUR.
 func (a Amount) String() string { return Money(a.Value, a.Currency) }
 
-// Money formats v in currency cur with two decimals.
 func Money(v float64, cur string) string {
 	s := fmt.Sprintf("%.2f", math.Abs(v))
 	if i := strings.IndexByte(s, '.'); i > 3 {
@@ -45,40 +42,34 @@ func Money(v float64, cur string) string {
 	return sign + s + " " + cur
 }
 
-// CostRow is one billing account's spend for one month.
 type CostRow struct {
 	Label     string
-	Provider  string // Azure Foundry, GitHub Copilot
-	Slot      int    // series color: the Foundry or Copilot profile's
-	Mode      string // Copilot billing system, readable
-	Month     string // YYYY-MM
-	MonthName string // "Nov 2026"
-	Current   bool   // the month in progress
+	Provider  string
+	Slot      int
+	Mode      string
+	Month     string
+	MonthName string
+	Current   bool
 	Totals    []Amount
-	Projected *Amount   // current month at its daily rate so far (single currency only)
-	Daily     []float64 // per UTC day of the month, when the provider reports dates
+	Projected *Amount
+	Daily     []float64
 	DailyMax  float64
-	Top       []Named // biggest models, SKUs, or resources
-	Currency  string  // of Top and Daily, when there is a single one
+	Top       []Named
+	Currency  string
 	Items     int
 	Level     Level
-	Status    string // fresh, pending, error text
-	Fix       string // command or step that fixes the error
+	Status    string
+	Fix       string
 	Basis     string
 	Retrieved time.Time
 
-	// The previous month, shown on the same card.
 	PrevName   string
 	PrevTotals []Amount
-	PrevNote   string // pending or failed query, instead of PrevTotals
+	PrevNote   string
 
-	// Local is Copilot's own per-request AI-credit log for the month, priced at GitHub's rate. It
-	// is the user's usage even when the seat is billed to an organization's pooled credits.
 	Local, PrevLocal *Amount
 }
 
-// Headline is the card's big figure: the provider-reported total, or the local Copilot estimate
-// when the provider reports no metered usage for this account.
 func (r CostRow) Headline() string {
 	if len(r.Totals) == 0 && r.Local != nil {
 		return "≈" + r.Local.String()
@@ -86,7 +77,6 @@ func (r CostRow) Headline() string {
 	return JoinAmounts(r.Totals)
 }
 
-// Prev is the previous month's figure for the card.
 func (r CostRow) Prev() string {
 	switch {
 	case r.PrevNote != "":
@@ -97,14 +87,12 @@ func (r CostRow) Prev() string {
 	return JoinAmounts(r.PrevTotals)
 }
 
-// Costs is provider-reported billing for the configured accounts. It is not filtered by tab or
-// profile: billing accounts don't map one-to-one onto token-log profiles.
 type Costs struct {
 	Rows       []CostRow
-	MonthTotal []Amount // current month across accounts, per currency
+	MonthTotal []Amount
 	Month      string
 	Sub        string
-	Hint       string // how to configure accounts, when none are
+	Hint       string
 	Warning    string
 	Configured bool
 }
@@ -118,7 +106,7 @@ func (d *Dashboard) buildCosts(s *snapshot.Snapshot, now time.Time) {
 	c.Month = monthName(months[0])
 	credits := copilotCredits(s)
 	total := map[string]float64{}
-	// One card per account: the current month, with the previous month inside it.
+
 	var ids []string
 	byID := map[string]map[string]billing.Status{}
 	for _, st := range s.Costs {
@@ -171,7 +159,6 @@ func (d *Dashboard) buildCosts(s *snapshot.Snapshot, now time.Time) {
 	d.Costs = c
 }
 
-// copilotCredits sums Copilot's locally logged AI credits per UTC month (YYYY-MM).
 func copilotCredits(s *snapshot.Snapshot) map[string]float64 {
 	out := map[string]float64{}
 	for _, r := range s.Rows {
@@ -197,7 +184,7 @@ func costRow(st billing.Status, now time.Time, current string) CostRow {
 		row.Level, row.Status = Warning, "querying provider…"
 		return row
 	case st.Report == nil && st.Retrying:
-		// rate limited before any data arrived: waiting, not broken
+
 		row.Level, row.Status = Warning, "waiting for the provider's rate limit; next try "+WhenLabel(st.Next.Local())
 		return row
 	case st.Report == nil:
@@ -206,7 +193,7 @@ func costRow(st billing.Status, now time.Time, current string) CostRow {
 	case st.Error != "" && !st.Retrying:
 		row.Level, row.Status = Serious, "showing data from "+WhenLabel(st.Report.Retrieved.Local())+"; last query failed: "+st.Error
 	default:
-		// fresh, or a refresh deferred by a provider rate limit: the data shown is the latest good report
+
 		row.Level, row.Status = Good, "updated "+WhenLabel(st.Report.Retrieved.Local())+next
 	}
 	r := st.Report
@@ -233,7 +220,7 @@ func costRow(st billing.Status, now time.Time, current string) CostRow {
 	}
 	row.Totals = amounts(totals)
 	if len(totals) == 0 {
-		row.Status += " · no metered usage reported" // a successful empty report, not a free plan
+		row.Status += " · no metered usage reported"
 	}
 	if len(row.Totals) == 1 {
 		row.Currency = row.Totals[0].Currency
@@ -285,7 +272,6 @@ func amounts(m map[string]float64) []Amount {
 	return out
 }
 
-// JoinAmounts lists per-currency amounts, e.g. "$12.30 · 4.00 EUR".
 func JoinAmounts(as []Amount) string {
 	parts := make([]string, len(as))
 	for i, a := range as {

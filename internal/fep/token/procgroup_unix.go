@@ -9,8 +9,6 @@ import (
 	"syscall"
 )
 
-// killProcessGroupOnCancel starts cmd as the leader of a new process group and makes context
-// cancellation SIGKILL the whole group, so children of a wrapper script die with it.
 func killProcessGroupOnCancel(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {

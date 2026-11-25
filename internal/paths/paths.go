@@ -1,5 +1,3 @@
-// Package paths holds ai-usage's default file locations. They don't depend on where the checkout
-// lives, so moving or re-cloning the repository keeps the same history.
 package paths
 
 import (
@@ -9,11 +7,8 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// DefaultPort is the dashboard's loopback port.
 const DefaultPort = 8790
 
-// DataDir holds history (hourly.json) and the ai-work-report overlay: $AI_USAGE_DATA_DIR, else
-// ~/.local/share/ai-usage.
 func DataDir() string {
 	if d := os.Getenv("AI_USAGE_DATA_DIR"); d != "" {
 		return usage.ExpandHome(d)
@@ -21,8 +16,6 @@ func DataDir() string {
 	return filepath.Join(usage.Home, ".local", "share", "ai-usage")
 }
 
-// M365Store is the Microsoft 365 Copilot usage store that `ai-usage m365-sync` writes:
-// $AI_USAGE_M365_STORE, else DataDir()/m365-copilot.json.
 func M365Store() string {
 	if f := os.Getenv("AI_USAGE_M365_STORE"); f != "" {
 		return usage.ExpandHome(f)
@@ -30,7 +23,6 @@ func M365Store() string {
 	return filepath.Join(DataDir(), "m365-copilot.json")
 }
 
-// ConfigFile is the optional budgets file: $AI_USAGE_CONFIG, else ~/.config/ai-usage/dashboard.json.
 func ConfigFile() string {
 	if f := os.Getenv("AI_USAGE_CONFIG"); f != "" {
 		return usage.ExpandHome(f)
@@ -38,8 +30,6 @@ func ConfigFile() string {
 	return filepath.Join(usage.Home, ".config", "ai-usage", "dashboard.json")
 }
 
-// ProjectsFile holds the ownership rules: $AI_USAGE_PROJECTS, else
-// ~/.config/ai-usage/projects.yaml.
 func ProjectsFile() string {
 	if f := os.Getenv("AI_USAGE_PROJECTS"); f != "" {
 		return usage.ExpandHome(f)
@@ -47,11 +37,8 @@ func ProjectsFile() string {
 	return filepath.Join(usage.Home, ".config", "ai-usage", "projects.yaml")
 }
 
-// BillingCacheFile is the billing state shared by every ai-usage process inside a data dir.
 func BillingCacheFile(dataDir string) string { return filepath.Join(dataDir, "billing.json") }
 
-// HistoryFile is the hourly history store inside a data dir.
 func HistoryFile(dataDir string) string { return filepath.Join(dataDir, "hourly.json") }
 
-// WorkReportDir is the ai-work-report workdir inside a data dir.
 func WorkReportDir(dataDir string) string { return filepath.Join(dataDir, "work-report") }

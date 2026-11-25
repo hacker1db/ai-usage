@@ -91,7 +91,7 @@ func TestBrowserRequestsRefusedByDefault(t *testing.T) {
 			t.Errorf("%s: ACAO must not be set", c.name)
 		}
 	}
-	// A refused browser request never reaches the upstream.
+
 	h.oai.mu.Lock()
 	n := len(h.oai.requests)
 	h.oai.mu.Unlock()
@@ -140,11 +140,11 @@ func TestAllowedOriginCORS(t *testing.T) {
 		!strings.Contains(rec.Header().Get("Access-Control-Expose-Headers"), headerRequestID) {
 		t.Fatalf("allowed origin request: %d %v", rec.Code, rec.Header())
 	}
-	// Allowed origin still needs a key.
+
 	if rec := h.do(t, http.MethodPost, "/v1/chat/completions", "", chatBody, "Origin", origin); rec.Code != 401 {
 		t.Fatalf("keyless allowed origin: %d", rec.Code)
 	}
-	// Only the exact origin is allowed.
+
 	if rec := h.do(t, http.MethodPost, "/v1/chat/completions", caidoKey, chatBody, "Origin", "http://localhost:5174"); rec.Code != 403 {
 		t.Fatalf("near-miss origin: %d", rec.Code)
 	}
@@ -171,7 +171,7 @@ func TestCheckOrigin(t *testing.T) {
 func TestConcurrencyLimit(t *testing.T) {
 	h := newHarness(t, jsonResponse(200, oaiCompletion), unused)
 	h.gw.slots = make(chan struct{}, 1)
-	h.gw.slots <- struct{}{} // the only slot is taken
+	h.gw.slots <- struct{}{}
 	rec := h.do(t, http.MethodPost, "/v1/chat/completions", caidoKey, chatBody)
 	if rec.Code != 503 || rec.Header().Get("Retry-After") != "1" {
 		t.Fatalf("%d %v", rec.Code, rec.Header())

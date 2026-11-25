@@ -1,4 +1,3 @@
-// Package budget reads optional token budgets from dashboard.json and computes period bounds.
 package budget
 
 import (
@@ -11,7 +10,6 @@ import (
 	"time"
 )
 
-// Period is a budget reset cycle.
 type Period string
 
 const (
@@ -20,25 +18,22 @@ const (
 	Month Period = "month"
 )
 
-// Metric is what a budget counts.
 type Metric string
 
 const (
-	Total    Metric = "total"    // input (incl. cached) + output
-	Uncached Metric = "uncached" // input - cached + output
+	Total    Metric = "total"
+	Uncached Metric = "uncached"
 	Output   Metric = "output"
 )
 
-// Budget is one tool:profile budget.
 type Budget struct {
 	Tokens       int64  `json:"tokens"`
 	Metric       Metric `json:"metric"`
 	Period       Period `json:"period"`
-	ResetDay     int    `json:"reset_day"`     // 1-28, for month
-	ResetWeekday int    `json:"reset_weekday"` // 0=Mon..6=Sun, for week
+	ResetDay     int    `json:"reset_day"`
+	ResetWeekday int    `json:"reset_weekday"`
 }
 
-// Same reports whether two budgets reset together and count the same metric, so they can be summed.
 func (b Budget) Same(o Budget) bool {
 	return b.Metric == o.Metric && b.Period == o.Period && b.ResetDay == o.ResetDay && b.ResetWeekday == o.ResetWeekday
 }
@@ -51,8 +46,6 @@ type rawBudget struct {
 	ResetWeekday *int     `json:"reset_weekday"`
 }
 
-// Load reads budgets keyed by "tool:profile". A missing file is no budgets and no error; problems
-// with individual entries are reported in warning while the valid ones still load.
 func Load(path string) (budgets map[string]Budget, warning string) {
 	budgets = map[string]Budget{}
 	if path == "" {
@@ -114,14 +107,13 @@ func deref(p *int, d int) int {
 
 func clamp(v, lo, hi int) int { return min(max(v, lo), hi) }
 
-// Bounds returns the local [start, end) of the period containing now.
 func Bounds(now time.Time, p Period, resetDay, resetWeekday int) (time.Time, time.Time) {
 	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	switch p {
 	case Day:
 		return day, day.AddDate(0, 0, 1)
 	case Week:
-		back := (int(day.Weekday()) + 6 - resetWeekday) % 7 // Weekday: 0=Sun; resetWeekday: 0=Mon
+		back := (int(day.Weekday()) + 6 - resetWeekday) % 7
 		start := day.AddDate(0, 0, -back)
 		return start, start.AddDate(0, 0, 7)
 	}

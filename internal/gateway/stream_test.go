@@ -73,7 +73,7 @@ type errReader struct{ err error }
 func (r errReader) Read([]byte) (int, error) { return 0, r.err }
 
 func TestUpstreamErrorMessage(t *testing.T) {
-	// One case per line, so gofmt versions cannot disagree on key alignment.
+
 	cases := [][2]string{
 		{`{"error":{"message":"m1"}}`, "m1"},
 		{`{"error":"m2"}`, "m2"},

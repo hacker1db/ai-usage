@@ -1,4 +1,3 @@
-// Package config loads proxy settings from the environment.
 package config
 
 import (
@@ -34,7 +33,6 @@ type Config struct {
 	LogLevel           string
 }
 
-// Load reads configuration through getenv so tests can supply a fake environment.
 func Load(getenv func(string) string) (*Config, error) {
 	var errs []error
 
@@ -94,7 +92,6 @@ func Load(getenv func(string) string) (*Config, error) {
 	return cfg, nil
 }
 
-// loadClientKey prefers FEP_CLIENT_KEY_FILE so the secret stays out of the process environment.
 func loadClientKey(getenv func(string) string) (string, error) {
 	if path := strings.TrimSpace(getenv("FEP_CLIENT_KEY_FILE")); path != "" {
 		info, err := os.Stat(path)

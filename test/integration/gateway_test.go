@@ -1,11 +1,5 @@
 //go:build integration
 
-// Package integration runs the real ai-gateway and ai-usage binaries end to end: fake OpenAI and
-// Anthropic upstreams on loopback, the gateway as a subprocess on a real TCP port, real HTTP
-// clients (and, when test/sdk has node_modules, the official OpenAI and Anthropic SDKs), then
-// `ai-usage report` over the gateway's log to prove the usage reaches the cost report.
-//
-// Run with: go test -tags integration -v ./test/integration/
 package integration
 
 import (
@@ -45,7 +39,6 @@ func build(t *testing.T, root, dir, pkg string) string {
 	return out
 }
 
-// upstreamLog records what each fake upstream received.
 type upstreamLog struct {
 	mu   sync.Mutex
 	hits []string
@@ -196,7 +189,6 @@ func startGateway(t *testing.T, bin, dir, openaiURL, anthropicURL string) *gatew
 	return nil
 }
 
-// post sends body and returns the status and the whole response body (the response is closed).
 func (g *gatewayProc) post(t *testing.T, path string, body string, hdr ...string) (int, string) {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodPost, g.base+path, strings.NewReader(body))
@@ -301,7 +293,6 @@ func TestGatewayEndToEnd(t *testing.T) {
 		}
 	})
 
-	// Stop the gateway so its log is complete, then check the log and the report.
 	_ = gw.cmd.Process.Signal(syscall.SIGTERM)
 	done := make(chan error, 1)
 	go func() { done <- gw.cmd.Wait() }()
@@ -314,8 +305,6 @@ func TestGatewayEndToEnd(t *testing.T) {
 		t.Fatal("gateway did not stop on SIGTERM")
 	}
 
-	// AIGW_IT_ARTIFACTS keeps the gateway's usage log (CI uploads it; it also feeds dashboard
-	// screenshots). The log holds no secrets, which the next subtest checks.
 	if dst := os.Getenv("AIGW_IT_ARTIFACTS"); dst != "" {
 		raw, err := os.ReadFile(gw.log)
 		if err == nil {

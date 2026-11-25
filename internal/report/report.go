@@ -1,5 +1,3 @@
-// Package report writes the dated per tool/profile/model/day report (report.md, usage.json,
-// usage.csv), replacing the earlier collect.py.
 package report
 
 import (
@@ -18,7 +16,6 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// Meta describes a report run.
 type Meta struct {
 	Generated string `json:"generated"`
 	Since     string `json:"since"`
@@ -27,7 +24,6 @@ type Meta struct {
 	Days      int    `json:"days"`
 }
 
-// FlatRow is one usage.json / usage.csv row.
 type FlatRow struct {
 	Tool       string  `json:"tool"`
 	Profile    string  `json:"profile"`
@@ -44,20 +40,17 @@ type FlatRow struct {
 	CopilotAIU float64 `json:"copilot_aiu"`
 }
 
-// Document is usage.json.
 type Document struct {
 	Meta    Meta             `json:"meta"`
 	Sources []sources.Status `json:"sources"`
 	Rows    []FlatRow        `json:"rows"`
 }
 
-// Cutoff is local midnight days-1 days before now, so "7 days" means today plus six full days.
 func Cutoff(now time.Time, days int) time.Time {
 	d := now.AddDate(0, 0, -(days - 1))
 	return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, now.Location())
 }
 
-// Build collects daily rows for the window.
 func Build(now time.Time, days int, opts sources.Options) (Document, *usage.Aggregator) {
 	cutoff := Cutoff(now, days)
 	agg := usage.NewAggregator(cutoff, usage.Daily)
@@ -76,8 +69,6 @@ func Build(now time.Time, days int, opts sources.Options) (Document, *usage.Aggr
 	return doc, agg
 }
 
-// Write stores report.md, usage.json, and usage.csv in outRoot/<today>/ and returns that folder
-// and the markdown.
 func Write(doc Document, agg *usage.Aggregator, outRoot string) (string, string, error) {
 	dir := filepath.Join(usage.ExpandHome(outRoot), doc.Meta.Until)
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301,G306: reports are user-facing documents; keep the default umask-style modes.
@@ -122,7 +113,6 @@ type group struct {
 	aiu      float64
 }
 
-// rollup groups non-proxy (or proxy-only) rows by keyFn, counting distinct sessions per group.
 func rollup(agg *usage.Aggregator, proxy bool, keyFn func(usage.Key) []string) []group {
 	byKey := map[string]*group{}
 	var order []string
@@ -187,7 +177,6 @@ func table(title string, groups []group, headers []string) []string {
 	return append(lines, "")
 }
 
-// Markdown renders report.md.
 func Markdown(doc Document, agg *usage.Aggregator) string {
 	out := []string{fmt.Sprintf("# AI usage report (%s to %s)", doc.Meta.Since, doc.Meta.Until), "",
 		fmt.Sprintf("Generated %s by `ai-usage report`. Days are local time (%s).", doc.Meta.Generated, doc.Meta.TZ), "",

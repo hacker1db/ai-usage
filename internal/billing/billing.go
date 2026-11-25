@@ -1,4 +1,3 @@
-// Package billing retrieves provider-reported costs, separately from token estimates.
 package billing
 
 import (
@@ -16,9 +15,6 @@ import (
 
 type Run func(context.Context, string, ...string) ([]byte, error)
 
-// Command uses existing CLI credentials without capturing tokens or logging command output. On
-// failure it returns a *CLIError carrying the CLI's own diagnostic (stderr), which names a missing
-// scope, role, or expired login.
 func Command(ctx context.Context, name string, args ...string) ([]byte, error) {
 	b, err := exec.CommandContext(ctx, name, args...).Output()
 	if err != nil {
@@ -58,7 +54,6 @@ var subscriptionRE = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA
 
 func Month(s string) (time.Time, error) { return time.Parse("2006-01", s) }
 
-// Copilot queries exactly one billing system; AI credits and premium requests must not be summed.
 func Copilot(ctx context.Context, run Run, kind, account, mode, month string) (Report, error) {
 	r := Report{Provider: "github-copilot", Account: kind + "/" + account, Month: month, Retrieved: time.Now().UTC(), Basis: "Provider-reported net metered usage, USD; excludes subscription seats and taxes; not a final invoice", Items: []Item{}}
 	t, err := Month(month)
@@ -74,7 +69,7 @@ func Copilot(ctx context.Context, run Run, kind, account, mode, month string) (R
 	if kind == "organizations" && account == "" {
 		return r, fmt.Errorf("organizations scope needs github_account set to the organization")
 	}
-	// Use whoever gh is logged in as, and say exactly what to run when the token can't do this.
+
 	login, scopes, err := ghIdentity(ctx, run)
 	if err != nil {
 		return r, err
@@ -124,7 +119,6 @@ func Copilot(ctx context.Context, run Run, kind, account, mode, month string) (R
 	return r, nil
 }
 
-// Azure restricts costs to explicit Foundry resource IDs in one subscription.
 func Azure(ctx context.Context, run Run, subscription string, resources []string, month string) (Report, error) {
 	r := Report{Provider: "azure-foundry", Account: subscription, Month: month, Retrieved: time.Now().UTC(), Basis: "Azure ActualCost / PreTaxCost for selected resources; excludes taxes; subject to billing adjustments", Items: []Item{}}
 	t, err := Month(month)
@@ -149,7 +143,7 @@ func Azure(ctx context.Context, run Run, subscription string, resources []string
 	if err := checkResources(); err != nil {
 		return r, err
 	}
-	// Default to the Azure CLI's current subscription and every Foundry account in it.
+
 	if subscription == "" {
 		if subscription, err = azSubscription(ctx, run); err != nil {
 			return r, err
@@ -182,7 +176,7 @@ func Azure(ctx context.Context, run Run, subscription string, resources []string
 		}
 		if len(strings.TrimSpace(string(b))) == 0 {
 			break
-		} // HTTP 204
+		}
 		items, next, e := azurePage(b)
 		if e != nil {
 			return r, e

@@ -7,8 +7,6 @@ import (
 	"ai-usage/internal/proxylog"
 )
 
-// tokens is the normalized accounting for one response. Input includes cached and cache-write
-// tokens, matching the ai-usage Record contract, so Total = Input + Output.
 type tokens struct {
 	found      bool
 	input      int64
@@ -45,8 +43,6 @@ func fromAnthropicUsage(u *antUsage) tokens {
 	}
 }
 
-// merge folds a later partial report into t: Anthropic streams report input in message_start and
-// output in message_delta, so non-zero fields win.
 func (t *tokens) merge(o tokens) {
 	if !o.found {
 		return
@@ -89,7 +85,6 @@ func openAIUsageFrom(t tokens) *oaiUsage {
 	return u
 }
 
-// scanUsage reads usage from one upstream JSON document: a full response or one SSE data payload.
 func scanUsage(kind string, data []byte, into *tokens) {
 	if !bytes.Contains(data, []byte(`"usage"`)) {
 		return

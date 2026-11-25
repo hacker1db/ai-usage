@@ -1,4 +1,3 @@
-// Package proxy forwards authenticated loopback requests to Azure AI Foundry with an Entra bearer token.
 package proxy
 
 import (
@@ -165,7 +164,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m, err := extractModel(body)
 		switch {
 		case errors.Is(err, errNotJSONObject):
-			// Routes that do not need a model tolerate bodies the proxy cannot parse.
+
 			if rule.requiresModel {
 				writeError(rec, http.StatusBadRequest, "invalid_json", "request body is not a valid JSON object")
 				return
@@ -211,8 +210,7 @@ func (p *Proxy) rewrite(pr *httputil.ProxyRequest) {
 		pr.Out.Header.Del(h)
 	}
 	pr.Out.Header.Del(headerCorrelate)
-	// Let the transport negotiate and decode compression so usage can be read from the body;
-	// the hop to the client is loopback, where compression buys nothing.
+
 	pr.Out.Header.Del("Accept-Encoding")
 	if info := infoFrom(pr.In.Context()); info != nil {
 		pr.Out.Header.Set("X-Ms-Client-Request-Id", info.id)
@@ -231,7 +229,7 @@ func (p *Proxy) handleUpstreamError(w http.ResponseWriter, r *http.Request, err 
 	var tokErr *tokenError
 	switch {
 	case r.Context().Err() != nil:
-		// The client went away (possibly while waiting for az); that is not a token or upstream failure.
+
 		if rec, ok := w.(*recorder); ok {
 			rec.status = 499
 		}
@@ -295,7 +293,6 @@ type routeRule struct {
 	pathModel     string
 }
 
-// matchRoute is the route allowlist: only the OpenAI v1 surfaces Codex and CLIProxyAPI use.
 func matchRoute(r *http.Request) (routeRule, bool) {
 	p := r.URL.Path
 	if r.URL.RawPath != "" || path.Clean(p) != p || !strings.HasPrefix(p, apiPrefix) {
@@ -331,10 +328,6 @@ var (
 	errModelType     = errors.New("request body model is not a string")
 )
 
-// extractModel reads the top-level "model" string the way a case-sensitive upstream parser would.
-// encoding/json matches keys case-insensitively and lets the last duplicate win, so a struct
-// unmarshal could check a different value than the one Foundry uses. Any top-level key that equals
-// "model" ignoring case, other than a single exact "model", is refused rather than guessed at.
 func extractModel(body []byte) (string, error) {
 	if !json.Valid(body) {
 		return "", errNotJSONObject
@@ -377,7 +370,6 @@ type tokenError struct{ err error }
 func (e *tokenError) Error() string { return "entra token: " + e.err.Error() }
 func (e *tokenError) Unwrap() error { return e.err }
 
-// authTransport injects the Entra bearer, retries once on upstream 401, and bounds idle streams.
 type authTransport struct {
 	base   http.RoundTripper
 	tokens token.Source
@@ -392,8 +384,7 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	resp.Body.Close()
-	// Only drop the token Foundry rejected: concurrent 401s for the same token must not each
-	// discard the replacement another request just acquired.
+
 	t.tokens.Invalidate(used)
 	info := infoFrom(req.Context())
 	if info != nil {
@@ -414,8 +405,6 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
-// attempt sends req with the current Entra token and also returns that token, so a 401 can
-// invalidate exactly the token that was rejected.
 func (t *authTransport) attempt(req *http.Request) (*http.Response, string, error) {
 	tok, err := t.tokens.Token(req.Context())
 	if err != nil {
@@ -450,7 +439,6 @@ func (b *cancelBody) Close() error {
 	return err
 }
 
-// idleBody cancels the upstream request when no bytes arrive within the idle window.
 type idleBody struct {
 	io.ReadCloser
 	idle   time.Duration
@@ -537,8 +525,6 @@ func isTimeout(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
-// clientName keeps the product token of a User-Agent (for example "codex_cli_rs") so usage can be
-// attributed per tool without logging the full header.
 func clientName(ua string) string {
 	name, _, _ := strings.Cut(strings.TrimSpace(ua), " ")
 	name, _, _ = strings.Cut(name, "/")

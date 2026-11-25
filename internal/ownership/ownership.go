@@ -1,10 +1,3 @@
-// Package ownership labels each session's repository as personal, work, shared, or any label you
-// define, from the repository's owner (the GitHub user or org in its remote URL) or its local
-// path.
-//
-// The built-in rule: a repository whose GitHub owner is a user account is "personal", and one
-// owned by an organization (or with no GitHub owner at all) is "org". An optional projects.yaml
-// adds labels and exceptions on top.
 package ownership
 
 import (
@@ -23,61 +16,54 @@ import (
 	"ai-usage/internal/usage"
 )
 
-// Built-in labels used by the automatic rules.
 const (
 	Personal = "personal"
 	Org      = "org"
 )
 
-// MaxLabels caps distinct labels; more than this is hard to read in one chart.
 const MaxLabels = 8
 
-// Me in an owners list stands for the accounts gh is logged in as.
 const Me = "me"
 
-// How a session's label was decided, most specific first.
 const (
-	ByRepo    = "repo"    // a repos: pattern matched owner/name or name
-	ByPath    = "path"    // a paths: prefix matched the session's directory
-	ByOwner   = "owner"   // the remote's owner is listed under owners:
-	ByDir     = "dir"     // an owners: name is a directory in the session's path
-	ByType    = "type"    // the GitHub owner is a user (personal) or an organization (org)
-	ByDefault = "default" // nothing matched
+	ByRepo    = "repo"
+	ByPath    = "path"
+	ByOwner   = "owner"
+	ByDir     = "dir"
+	ByType    = "type"
+	ByDefault = "default"
 )
 
-// Result is one session's classification.
 type Result struct {
-	Owner string // remote owner, e.g. "hacker1db"; "" when unknown
+	Owner string
 	Label string
 	By    string
 }
 
-// Classifier maps repositories to labels. Use Load or Auto; a Classifier is safe for concurrent use.
 type Classifier struct {
 	Default string
-	Labels  []string // display order: config order, then the default
-	Source  string   // how the rules were chosen, for the dashboard
-	Warning string   // config problems; the rules still apply as far as they parsed
+	Labels  []string
+	Source  string
+	Warning string
 	Auto    bool
-	ByType  bool // apply the user/org rule to sessions no config rule matched
+	ByType  bool
 
-	Profiles []ProfileSet // named dashboard profile filters (profiles: key), config order
+	Profiles []ProfileSet
 
 	types  *Types
-	owners map[string]string // lowercased owner -> label
+	owners map[string]string
 	repos  []repoRule
 	paths  []pathRule
 
 	mu      sync.Mutex
-	remotes map[string]string // directory -> remote URL ("" = none)
+	remotes map[string]string
 }
 
-type repoRule struct{ pattern, label string } // lowercased
-type pathRule struct{ prefix, label string }  // cleaned absolute path
+type repoRule struct{ pattern, label string }
+type pathRule struct{ prefix, label string }
 
 var labelRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,31}$`)
 
-// normLabel lowercases a label and turns spaces into "-".
 func normLabel(s string) (string, bool) {
 	s = strings.ToLower(strings.Join(strings.Fields(s), "-"))
 	return s, labelRe.MatchString(s)
@@ -87,11 +73,8 @@ func newClassifier(t *Types) *Classifier {
 	return &Classifier{types: t, owners: map[string]string{}, remotes: map[string]string{}}
 }
 
-// typeRuleDesc describes the built-in rule.
 const typeRuleDesc = "GitHub user repos are personal, org repos and everything else are org"
 
-// Load reads the YAML config at cfgPath; t answers user-or-org lookups (nil = never look up). A
-// missing file gives the built-in rule; a broken one gives the built-in rule plus a Warning.
 func Load(cfgPath string, t *Types) *Classifier {
 	src, err := os.ReadFile(cfgPath)
 	if errors.Is(err, fs.ErrNotExist) || cfgPath == "" {
@@ -115,7 +98,6 @@ func Load(cfgPath string, t *Types) *Classifier {
 	return c
 }
 
-// Auto returns the built-in rule used without a config.
 func Auto(t *Types) *Classifier {
 	c := newClassifier(t)
 	c.Auto, c.ByType = true, true
@@ -125,8 +107,6 @@ func Auto(t *Types) *Classifier {
 	return c
 }
 
-// Parse builds a classifier from projects.yaml text. me expands the "me" owner; t answers
-// user-or-org lookups. Without a default: key, sessions no rule matches get the built-in rule.
 func Parse(src string, me []string, t *Types) (*Classifier, error) {
 	doc, err := ParseYAML(src)
 	if err != nil {
@@ -146,7 +126,7 @@ func Parse(src string, me []string, t *Types) (*Classifier, error) {
 			warn = append(warn, "unknown key "+k)
 		}
 	}
-	// A broken profiles: section only drops the profile filters; the ownership rules still apply.
+
 	if c.Profiles, err = parseProfiles(root.Get("profiles")); err != nil {
 		warn = append(warn, err.Error()+" (profile filters ignored)")
 	}
@@ -192,13 +172,12 @@ func Parse(src string, me []string, t *Types) (*Classifier, error) {
 	if len(c.Labels) > MaxLabels {
 		return nil, fmt.Errorf("%d labels; use at most %d", len(c.Labels), MaxLabels)
 	}
-	// Longest path prefix first, so a nested directory can override its parent.
+
 	sort.SliceStable(c.paths, func(i, j int) bool { return len(c.paths[i].prefix) > len(c.paths[j].prefix) })
 	c.Warning = strings.Join(warn, "; ")
 	return c, nil
 }
 
-// addRules reads one label's value: a list (owners) or a mapping of owners/repos/paths lists.
 func (c *Classifier) addRules(label string, v any, me []string) ([]string, error) {
 	lists := map[string][]string{}
 	switch x := v.(type) {
@@ -279,9 +258,6 @@ func strs(v any) ([]string, error) {
 	return nil, errors.New("expected a list")
 }
 
-// Classify labels a session from its directory (as recorded, "~/" allowed) and the repository the
-// tool reported, if any. The remote URL is read from the repository's git config when the tool
-// didn't report one.
 func (c *Classifier) Classify(dir, repo string) Result {
 	abs := ""
 	if dir != "" {
@@ -317,7 +293,7 @@ func (c *Classifier) Classify(dir, repo string) Result {
 		r.Label, r.By = l, ByOwner
 		return r
 	}
-	// An account name in the local path (below home, so the login folder never counts).
+
 	if rel, err := filepath.Rel(usage.Home, abs); abs != "" && err == nil && !strings.HasPrefix(rel, "..") {
 		for _, seg := range strings.Split(rel, string(filepath.Separator)) {
 			if l, ok := c.owners[strings.ToLower(seg)]; ok {
@@ -337,14 +313,11 @@ func (c *Classifier) Classify(dir, repo string) Result {
 	return r
 }
 
-// Apply sets a session row's Owner and Class.
 func (c *Classifier) Apply(s *usage.SessionRow) {
 	r := c.Classify(s.Path, s.Repo)
 	s.Owner, s.Class = r.Owner, r.Label
 }
 
-// remoteOf finds the git repository containing dir and returns its origin URL (else its first
-// remote), reading .git/config directly. Results are cached for the classifier's lifetime.
 func (c *Classifier) remoteOf(dir string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -362,8 +335,6 @@ func (c *Classifier) remoteOf(dir string) string {
 	return u
 }
 
-// gitDir resolves p/.git to the directory holding the repository's shared config: .git itself,
-// the gitdir a ".git" file points at, or that gitdir's commondir (worktrees, bare-clone layouts).
 func gitDir(p string) string {
 	dotgit := filepath.Join(p, ".git")
 	st, err := os.Stat(dotgit)
@@ -395,7 +366,6 @@ func gitDir(p string) string {
 	return gd
 }
 
-// remoteURL reads [remote "origin"] url from a git config file, else the first remote's url.
 func remoteURL(cfg string) string {
 	b, err := os.ReadFile(cfg)
 	if err != nil {
@@ -426,9 +396,6 @@ func remoteURL(cfg string) string {
 	return first
 }
 
-// ParseRemote returns the host, owner (user, org, or Azure DevOps organization), and repository
-// name from a remote URL or an "owner/name" slug (host "", meaning github.com). Unknown shapes
-// give "", "", "".
 func ParseRemote(u string) (host, owner, name string) {
 	s := strings.TrimSpace(u)
 	if s == "" {
@@ -441,9 +408,9 @@ func ParseRemote(u string) (host, owner, name string) {
 		s = s[strings.Index(s, "://")+3:]
 		host, p, _ = strings.Cut(s, "/")
 	case strings.Contains(s, ":") && !strings.Contains(s[:strings.Index(s, ":")], "/"):
-		host, p, _ = strings.Cut(s, ":") // scp form: git@host:owner/name
+		host, p, _ = strings.Cut(s, ":")
 	default:
-		p, slug = s, true // owner/name
+		p, slug = s, true
 	}
 	if i := strings.LastIndex(host, "@"); i >= 0 {
 		host = host[i+1:]
@@ -453,20 +420,18 @@ func ParseRemote(u string) (host, owner, name string) {
 	}
 	p = strings.Trim(strings.TrimSuffix(strings.Trim(p, "/"), ".git"), "/")
 	segs := strings.Split(p, "/")
-	if len(segs) > 0 && segs[0] == "v3" { // Azure DevOps SSH: v3/org/project/repo
+	if len(segs) > 0 && segs[0] == "v3" {
 		segs = segs[1:]
 	}
 	if len(segs) < 2 || segs[0] == "" || segs[len(segs)-1] == "" {
 		return "", "", ""
 	}
 	if slug && len(segs) > 2 {
-		host = "dev.azure.com" // org/project/repo: Copilot's Azure DevOps slug, not GitHub
+		host = "dev.azure.com"
 	}
 	return host, segs[0], segs[len(segs)-1]
 }
 
-// GHAccounts lists the accounts gh is logged in to, from $GH_CONFIG_DIR/hosts.yml or
-// ~/.config/gh/hosts.yml.
 func GHAccounts() []string {
 	dir := os.Getenv("GH_CONFIG_DIR")
 	if dir == "" {
